@@ -10,11 +10,14 @@ Dobot Magician + 吸盘 + 三路相机的 Robot-Use Agent 项目：
 ## 快速开始
 
 ```bash
+bash scripts/setup_vendor.sh
 uv venv --python 3.12
 source .venv/bin/activate
-uv pip install -e vendor/uni-robot-agent -e . --extra dev
+uv pip install -e vendor/uni-robot-agent -e ".[dev]"
 pytest
 ```
+
+需要用户/硬件参与的步骤见 `docs/HANDOFF.md`；当前状态见 `docs/PROGRESS.md`。
 
 ## 目录
 
