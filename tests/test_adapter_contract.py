@@ -69,7 +69,7 @@ def test_step_pose_updates_state_and_returns_receipt():
     command = PoseCommand(
         arms={
             "arm": ArmCommand(
-                pose=Pose(position=(0.15, 0.0, 0.05), quaternion=(1.0, 0.0, 0.0, 0.0)),
+                pose=Pose(position=(0.15, 0.0, 0.05), quaternion=(0.0, 1.0, 0.0, 0.0)),
                 gripper=0.0,
             )
         }
@@ -105,3 +105,54 @@ def test_finish_returns_offline_outcome():
     result = adapter.finish("done", status="success")
     assert "task_success" in result
     assert result["reason"] == "done"
+
+
+def test_read_state_reports_tool_down_orientation():
+    adapter = _adapter()
+    quaternion = adapter.read_state().arms["arm"].control_pose.quaternion
+    assert quaternion == pytest.approx((0.0, 1.0, 0.0, 0.0), abs=1e-6)
+
+
+def test_step_pose_rejects_orientation_change():
+    adapter = _adapter()
+    command = PoseCommand(
+        arms={
+            "arm": ArmCommand(
+                pose=Pose(position=(0.12, 0.0, 0.02), quaternion=(1.0, 0.0, 0.0, 0.0)),
+                gripper=1.0,
+            )
+        }
+    )
+    with pytest.raises(RequestRejected):
+        adapter.step_pose(command)
+
+
+def test_adapter_rejects_unreachable_pose_when_kinematics_supplied():
+    from dobot_rua.hardware.safety import SafetyLimits
+    from dobot_rua.kinematics import load_fk
+
+    adapter = DobotAdapter(
+        robot=FakeRobot(),
+        camera_source=FakeCameraSource(),
+        config=AdapterConfig(
+            x_range_mm=(-1000.0, 1000.0),
+            y_range_mm=(-1000.0, 1000.0),
+            z_range_mm=(-1000.0, 1000.0),
+            max_step_mm=5000.0,
+        ),
+        episode_id="trial-2",
+        instruction="Place the red block at the black lines intersection.",
+        metadata={},
+        fk_params=load_fk("configs/fk_magician.yaml"),
+        safety_limits=SafetyLimits.from_yaml("configs/robot_limits.yaml"),
+    )
+    command = PoseCommand(
+        arms={
+            "arm": ArmCommand(
+                pose=Pose(position=(0.9, 0.9, 0.02), quaternion=(0.0, 1.0, 0.0, 0.0)),
+                gripper=1.0,
+            )
+        }
+    )
+    with pytest.raises(RequestRejected):
+        adapter.step_pose(command)

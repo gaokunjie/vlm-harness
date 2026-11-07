@@ -9,6 +9,7 @@ from typing import Iterable
 from scipy.stats import binomtest
 
 from .ledger import TrialRecord
+from .rubric import RubricConfig, stage_passes
 
 
 def wilson_ci(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -39,26 +40,40 @@ def failure_pareto(records: Iterable[TrialRecord]) -> list[tuple[str, int]]:
     return counts.most_common()
 
 
-def aggregate_by_dimension(records: Iterable[TrialRecord]) -> dict[str, float]:
-    """Unweighted mean success per paper-style capability dimension."""
+DIMENSION_STAGES: dict[str, set[int]] = {
+    "spatial_understanding": {3, 6, 7},
+    "object_generalization": {2},
+    "instruction_following": {1},
+    "embodied_reasoning": {8},
+    "execution": {4, 5},
+}
+
+
+def aggregate_by_dimension(
+    records: Iterable[TrialRecord], config: RubricConfig | None = None
+) -> dict[str, float | None]:
+    """Paper-style 0–20 score per dimension, then an unweighted mean.
+
+    Each record contributes ``20 * passed_weight / dimension_weight``. The
+    two paper dimensions with no dedicated stages in this one-task rubric are
+    returned as ``None`` rather than a fabricated zero.
+    """
+    config = config or RubricConfig()
     records = list(records)
-    dimensions = {
-        "spatial_understanding": {3, 6, 7},
-        "object_generalization": {2},
-        "instruction_following": {1},
-        "embodied_reasoning": {8},
-        "execution": {4, 5},
-    }
-    result: dict[str, float] = {}
-    for name, stages in dimensions.items():
-        relevant = [
-            record
-            for record in records
-            if record.primary_failure_stage is None or record.primary_failure_stage in stages
-        ]
-        result[name] = (
-            sum(1 for record in relevant if record.success) / len(relevant)
-            if relevant
-            else 0.0
-        )
+    result: dict[str, float | None] = {}
+    for name, stages in DIMENSION_STAGES.items():
+        total_weight = sum(float(config.weights[stage]) for stage in stages)
+        if not records:
+            result[name] = 0.0
+            continue
+        scores = []
+        for record in records:
+            passed = stage_passes(record, config)
+            earned = sum(
+                float(config.weights[stage]) for stage in stages if passed[stage]
+            )
+            scores.append(20.0 * earned / total_weight)
+        result[name] = sum(scores) / len(scores)
+    result["compositional_generalization"] = None
+    result["unseen_tasks"] = None
     return result

@@ -39,3 +39,13 @@ def test_measure_block_gt_is_independent_and_accurate():
     assert red.color == "red"
     assert np.allclose(red.center_uv, (320.0, 240.0), atol=2.0)
     assert np.allclose(red.center_xyz_m, (0.0, 0.0, 0.0), atol=0.002)
+
+
+def test_measure_block_gt_ignores_a_long_line_component():
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    cv2.rectangle(image, (200, 200), (220, 220), (0, 0, 255), -1)
+    cv2.line(image, (100, 100), (540, 380), (0, 0, 255), 3)
+    K, T = _camera()
+    red = measure_block_gt(image, K, T, plane_z_m=0.0, color="red")
+    assert red is not None
+    assert np.allclose(red.center_uv, (210.0, 210.0), atol=3.0)

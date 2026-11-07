@@ -45,3 +45,17 @@ def test_measure_intersection_gt_is_independent_and_accurate():
     assert result is not None
     assert np.allclose(result.intersection_uv, (320.0, 240.0), atol=5.0)
     assert np.allclose(result.intersection_xyz_m, (0.0, 0.0, 0.0), atol=0.005)
+
+
+def test_measure_intersection_gt_does_not_share_the_agent_mask(monkeypatch):
+    image = _line_scene((0, 0, 0))
+    K, T = _camera()
+    import dobot_rua.perception.lines as lines
+
+    monkeypatch.setattr(
+        lines, "_line_mask", lambda image, color: np.zeros(image.shape[:2], np.uint8)
+    )
+    assert lines.detect_line_intersection(image, K, T, 0.0, "black") is None
+    gt = lines.measure_intersection_gt(image, K, T, 0.0, "black")
+    assert gt is not None
+    assert np.allclose(gt.intersection_uv, (320.0, 240.0), atol=5.0)

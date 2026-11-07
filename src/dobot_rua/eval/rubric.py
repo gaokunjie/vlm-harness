@@ -101,6 +101,18 @@ def _stage_checks(record: TrialRecord, config: RubricConfig) -> list[tuple[int, 
     ]
 
 
+def stage_passes(
+    record: TrialRecord, config: RubricConfig | None = None
+) -> dict[int, bool]:
+    """Independent per-stage outcomes, used for dimension scores.
+
+    This deliberately does not stop at the first failure: a failure at stage 6
+    must not zero a dimension whose stages are 1, 2, 4 or 8.
+    """
+    config = config or RubricConfig()
+    return {stage: bool(passed) for stage, passed in _stage_checks(record, config)}
+
+
 def score_trial(record: TrialRecord, config: RubricConfig | None = None) -> RubricResult:
     config = config or RubricConfig()
     stages: list[StageResult] = []

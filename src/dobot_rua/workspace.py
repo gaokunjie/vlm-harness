@@ -69,17 +69,26 @@ def build_fov_mask(
     return PointMask.from_points(inside, grid_mm=1.0)
 
 
+def _joint_samples(
+    limit: tuple[float, float], step_deg: float, margin_deg: float = 2.0
+) -> np.ndarray:
+    """Sample a joint range while respecting the safety margin at both ends."""
+    low, high = limit
+    return np.arange(low + margin_deg, high - margin_deg + 1e-9, step_deg)
+
+
 def build_reachability_mask(
     params: FKParams,
     limits: LimitsDeg,
     z_mm: float,
     grid_mm: float = 5.0,
     joint_step_deg: float = 5.0,
+    margin_deg: float = 2.0,
 ) -> PointMask:
     """Sample joint space and keep FK points within ``grid_mm/2`` of ``z_mm``."""
-    j1_values = np.arange(limits[0][0], limits[0][1] + 1e-9, joint_step_deg)
-    j2_values = np.arange(limits[1][0], limits[1][1] + 1e-9, joint_step_deg)
-    j3_values = np.arange(limits[2][0], limits[2][1] + 1e-9, joint_step_deg)
+    j1_values = _joint_samples(limits[0], joint_step_deg, margin_deg)
+    j2_values = _joint_samples(limits[1], joint_step_deg, margin_deg)
+    j3_values = _joint_samples(limits[2], joint_step_deg, margin_deg)
     points: list[tuple[float, float]] = []
     for j1 in j1_values:
         for j2 in j2_values:

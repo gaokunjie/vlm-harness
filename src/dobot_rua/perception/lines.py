@@ -35,6 +35,22 @@ def _line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
     return None
 
 
+def _gt_line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
+    """Independent GT mask using BGR thresholds instead of the agent's HSV path."""
+    blue, green, red = cv2.split(image_bgr)
+    if line_color == "black":
+        mask = (blue < 90) & (green < 90) & (red < 90)
+    elif line_color == "red":
+        mask = (red > 150) & (green < 90) & (blue < 90)
+    elif line_color == "blue":
+        mask = (blue > 150) & (green < 90) & (red < 90)
+    elif line_color == "green":
+        mask = (green > 120) & (red < 100) & (blue < 100)
+    else:
+        return None
+    return mask.astype(np.uint8) * 255
+
+
 def _fit_segments(segments: np.ndarray) -> list[tuple[float, np.ndarray]]:
     """Group Hough segments by orientation and fit one line per group."""
     angles = []
@@ -131,7 +147,7 @@ def measure_intersection_gt(
     Deliberately different from :func:`detect_line_intersection`, which uses
     probabilistic Hough + per-orientation least-squares fitting.
     """
-    mask = _line_mask(image_bgr, line_color)
+    mask = _gt_line_mask(image_bgr, line_color)
     if mask is None:
         return None
     lines = cv2.HoughLines(mask, 1, np.pi / 180.0, threshold=80)

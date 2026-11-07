@@ -5,6 +5,7 @@ from dobot_rua.geometry import matrix_to_pose
 from dobot_rua.kinematics import forward_kinematics, load_fk, load_limits
 from dobot_rua.workspace import (
     PointMask,
+    _joint_samples,
     build_fov_mask,
     build_reachability_mask,
     sample_layout,
@@ -88,7 +89,14 @@ def test_fov_mask_keeps_points_inside_image():
 def test_reachability_mask_contains_a_known_fk_point():
     params = load_fk("configs/fk_magician.yaml")
     limits = load_limits("configs/robot_limits.yaml")
-    xyz = forward_kinematics(params, 0.0, 45.0, 45.0)
+    # These joints are on the margin-aware 5-degree sampling grid.
+    xyz = forward_kinematics(params, 2.0, 42.0, 42.0)
     mask = build_reachability_mask(params, limits, z_mm=float(xyz[2]), grid_mm=5.0)
     assert mask.contains(float(xyz[0]), float(xyz[1]))
     assert not mask.contains(5000.0, 5000.0)
+
+
+def test_joint_samples_respect_limit_margin():
+    samples = _joint_samples((-90.0, 90.0), step_deg=5.0, margin_deg=2.0)
+    assert samples.min() >= -88.0
+    assert samples.max() <= 88.0

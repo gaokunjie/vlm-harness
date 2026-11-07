@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from ..hardware.interface import RobotInterface, RobotState
 from ..hardware.safety import SafetyError, SafetyLimits
+from ..kinematics import FKParams, inverse_kinematics
 
 from uni_robot_agent.services.environment.contracts import (
     ArmCommand,
@@ -45,10 +47,20 @@ class AdapterConfig:
     max_episode_steps: int = 200
     max_step_mm: float = 100.0
     position_tolerance_mm: float = 5.0
+    orientation_tolerance_rad: float = 0.35
     x_range_mm: tuple[float, float] = (-300.0, 300.0)
     y_range_mm: tuple[float, float] = (-300.0, 300.0)
     z_range_mm: tuple[float, float] = (-30.0, 300.0)
     cameras: tuple[str, ...] = ("front", "side", "wrist")
+
+
+def _tool_quaternion(r_deg: float) -> tuple[float, float, float, float]:
+    """Tool-down orientation: 180 deg about x, then the end rotation about z."""
+    rotation = Rotation.from_euler("x", 180.0, degrees=True) * Rotation.from_euler(
+        "z", float(r_deg), degrees=True
+    )
+    x, y, z, w = rotation.as_quat()
+    return (float(w), float(x), float(y), float(z))
 
 
 class DobotAdapter:
@@ -62,6 +74,7 @@ class DobotAdapter:
         instruction: str,
         metadata: dict[str, Any] | None = None,
         safety_limits: SafetyLimits | None = None,
+        fk_params: FKParams | None = None,
         success_fn: Any | None = None,
     ) -> None:
         self.robot = robot
@@ -71,6 +84,7 @@ class DobotAdapter:
         self.instruction = instruction
         self.metadata = dict(metadata or {})
         self.safety_limits = safety_limits
+        self.fk_params = fk_params
         self.success_fn = success_fn
         self._state_version = 0
         self._native_steps = 0
@@ -131,7 +145,7 @@ class DobotAdapter:
         return ArmState(
             control_pose=Pose(
                 position=(robot.x_mm / 1000.0, robot.y_mm / 1000.0, robot.z_mm / 1000.0),
-                quaternion=(1.0, 0.0, 0.0, 0.0),
+                quaternion=_tool_quaternion(robot.r_deg),
             ),
             joints=[
                 float(np.radians(value))
@@ -142,7 +156,11 @@ class DobotAdapter:
             metadata={"measured_xyz_mm": [robot.x_mm, robot.y_mm, robot.z_mm]},
         )
 
-    def _check_pose(self, position_m: tuple[float, float, float]) -> None:
+    def _check_pose(
+        self,
+        position_m: tuple[float, float, float],
+        quaternion_wxyz: tuple[float, float, float, float],
+    ) -> None:
         x_mm, y_mm, z_mm = (float(value) * 1000.0 for value in position_m)
         for value, (low, high), axis in (
             (x_mm, self.config.x_range_mm, "x"),
@@ -151,15 +169,49 @@ class DobotAdapter:
         ):
             if not (low <= value <= high):
                 raise RequestRejected(f"{axis}={value:.1f} mm outside workspace [{low}, {high}]")
+
         current = self.robot.read_state()
-        distance = float(
-            np.linalg.norm(
-                np.array([x_mm, y_mm, z_mm]) - np.array([current.x_mm, current.y_mm, current.z_mm])
+        previous = (current.x_mm, current.y_mm, current.z_mm)
+        if self.safety_limits is not None:
+            try:
+                self.safety_limits.check_step(
+                    previous, (x_mm, y_mm, z_mm), max_step_mm=self.config.max_step_mm
+                )
+            except SafetyError as error:
+                raise RequestRejected(str(error)) from error
+        else:
+            distance = float(
+                np.linalg.norm(np.array([x_mm, y_mm, z_mm]) - np.array(previous))
             )
-        )
-        if distance > self.config.max_step_mm:
+            if distance > self.config.max_step_mm:
+                raise RequestRejected(
+                    f"step {distance:.1f} mm exceeds max {self.config.max_step_mm:.1f} mm"
+                )
+
+        if self.fk_params is not None and self.safety_limits is not None:
+            solutions = inverse_kinematics(
+                self.fk_params,
+                x_mm,
+                y_mm,
+                z_mm,
+                self.safety_limits.joint_limits_deg,
+                margin_deg=2.0,
+            )
+            if not solutions:
+                raise RequestRejected(
+                    f"target ({x_mm:.1f}, {y_mm:.1f}, {z_mm:.1f}) is not reachable "
+                    "within the joint limits"
+                )
+
+        w, x, y, z = (float(value) for value in quaternion_wxyz)
+        target_rotation = Rotation.from_quat([x, y, z, w])
+        w, x, y, z = _tool_quaternion(current.r_deg)
+        current_rotation = Rotation.from_quat([x, y, z, w])
+        angle = float(np.linalg.norm((current_rotation.inv() * target_rotation).as_rotvec()))
+        if angle > self.config.orientation_tolerance_rad:
             raise RequestRejected(
-                f"step {distance:.1f} mm exceeds max {self.config.max_step_mm:.1f} mm"
+                f"orientation change {angle:.3f} rad exceeds the fixed-rotation tolerance "
+                f"{self.config.orientation_tolerance_rad:.3f} rad"
             )
 
     def validate_commands(self, commands: list[Any], mode: str) -> None:
@@ -173,7 +225,7 @@ class DobotAdapter:
             target = command.arms["arm"]
             if not isinstance(target, ArmCommand):
                 raise RequestRejected("joint targets are not supported")
-            self._check_pose(target.pose.position)
+            self._check_pose(target.pose.position, target.pose.quaternion)
 
     def step_pose(self, command: PoseCommand) -> StepReceipt:
         self.validate_commands([command], "pose")

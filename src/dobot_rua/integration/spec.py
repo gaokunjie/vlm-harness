@@ -13,6 +13,7 @@ from uni_robot_agent.integrations.gripper import (
 )
 from uni_robot_agent.integrations.prepared_episode import PreparedEpisodeSession
 
+from . import prompt as _prompt  # noqa: F401 - registers the environment prompt builder
 from .tools import NAMES as PERCEPTION_NAMES
 from .tools import PerceptionTools
 

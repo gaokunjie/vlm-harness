@@ -73,8 +73,9 @@ v4l2-ctl --list-devices
 
 ## 4. 真机 adapter smoke
 
-1. 用 `DobotRobot` + 真实相机源构造 `DobotAdapter`。
-2. 先只做 `read_state` / `capture` / 单步小位移 / 吸盘 ON-OFF。
+1. 用 `DobotRobot` + 真实相机源构造 `DobotAdapter`；**必须传 `fk_params=load_fk(...)` 和 `safety_limits=SafetyLimits.from_yaml(...)`**，否则 adapter 只查 x/y/z 包围盒，不查关节可达性。
+2. 工具朝向按“朝下”四元数 `(0,1,0,0)` 上报；`move` 目标姿态必须复制实测姿态，偏离超过 0.35 rad 会被拒绝。
+3. 先只做 `read_state` / `capture` / 单步小位移 / 吸盘 ON-OFF。
 3. 确认：
    - `description` 的 `rotation="fixed"`、`gripper="binary"` 被官方 `move/grasp/release` 接受；
    - `step_pose` 的 `stop_reason`、`position_error_mm` 合理；

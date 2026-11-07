@@ -48,8 +48,15 @@ def test_manifest_rejects_duplicate_plan_ids():
 
 
 def test_manifests_are_disjoint():
-    dev = Manifest(experiment_id="e1", split="dev", seed=1, trials=[_trial("p1", "dev")])
-    test = Manifest(experiment_id="e1", split="test", seed=2, trials=[_trial("p2", "test")])
+    dev = Manifest(experiment_id="e1", split="dev", seed=1, trials=[_trial("p1", "dev", seed=1)])
+    test = Manifest(experiment_id="e1", split="test", seed=2, trials=[_trial("p2", "test", seed=2)])
     assert_disjoint(dev, test)
     with pytest.raises(ValueError):
         assert_disjoint(dev, dev)
+
+
+def test_assert_disjoint_rejects_same_layout_across_splits():
+    dev = Manifest(experiment_id="e1", split="dev", seed=1, trials=[_trial("p1", "dev")])
+    test = Manifest(experiment_id="e1", split="test", seed=1, trials=[_trial("p2", "test")])
+    with pytest.raises(ValueError):
+        assert_disjoint(dev, test)

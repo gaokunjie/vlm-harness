@@ -123,6 +123,10 @@ def measure_block_gt(
             continue
         if not 0.6 <= width / height <= 1.6:
             continue
+        # A long thin line has a square-ish bbox but almost no fill; reject it
+        # so the GT path cannot silently return a line as a block.
+        if area / float(width * height) < 0.5:
+            continue
         if best is None or area > best[0]:
             best = (area, label)
     if best is None:
