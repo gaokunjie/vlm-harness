@@ -32,10 +32,10 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="/dev/video2")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
-    p.add_argument("--squares-x", type=int, default=7)
-    p.add_argument("--squares-y", type=int, default=8)
-    p.add_argument("--square-mm", type=float, default=25.0)
-    p.add_argument("--marker-mm", type=float, default=18.75)
+    p.add_argument("--squares-x", type=int, default=5)
+    p.add_argument("--squares-y", type=int, default=5)
+    p.add_argument("--square-mm", type=float, default=10.0)
+    p.add_argument("--marker-mm", type=float, default=7.5)
     p.add_argument("--duration", type=float, default=45.0)
     return p
 

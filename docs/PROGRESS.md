@@ -163,6 +163,14 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 修复：`DobotRobot.move_pose` 改为队列索引 + 位姿稳定双等待；`auto_hand_eye_wrist.py` 增加手眼平移合理性检查和 spread 拒绝（>15 mm 或 >2.5° 不保存）。
 - 待你重跑修复后的脚本。
 
+## Wrist 小板生成与打印（2026-11-07）
+
+- 生成 **5×5 / 10 mm** ChArUco（marker 7.5 mm，`DICT_4X4_50`），A4、300 DPI、带 10 mm 比例尺。
+- 文件：`audit/boards/charuco_wrist_5x5_10mm.pdf/.png`。
+- 已发送到打印机 **`HP_LaserJet_MFP_M227fdw_99C1AF`**，job `HP_LaserJet_MFP_M227fdw_99C1AF-1`。
+- 打印后请先量一下 10 mm 比例尺；若不是 10 mm，说明打印驱动缩放，需要按 100% 重打。
+- 下一步：用小板在 10 cm 处重做 wrist 内参（`--board-preset wrist`），再跑 `auto_hand_eye_wrist.py`。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。

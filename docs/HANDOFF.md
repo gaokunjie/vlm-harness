@@ -74,7 +74,11 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 
 - 现场块色：蓝块 + 黄块；目标：黑线交点 A + 红线交点 B。
 - 红线交点 B 当前 pixel 约 `(600, 275)`，靠近黄块和机械臂静止位姿；采集前把臂移到 survey 位姿（例如抬高/退开），避免遮挡。
-- 已打印 ChArUco 8×7 / 25 mm；OpenCV 实际检测为 **(7,8)**（板旋转 90°），默认 **`DICT_4X4_50`**、marker 18.75 mm。front 内参 RMS 0.8135 px；side RMS 0.4415 px；wrist 已做正则化 marker 模式内参，RMS 3.36 px（provisional，fx=fy，畸变合理）。下一步 wrist 手眼。
+- 已打印两套板：
+- front/side：**7×8 / 25 mm**（OpenCV 检测为 `(7,8)`，`DICT_4X4_50`，marker 18.75 mm）；内参已完成。
+- wrist：**5×5 / 10 mm**（marker 7.5 mm，`DICT_4X4_50`），A4 PDF 已生成并打印到 `HP_LaserJet_MFP_M227fdw_99C1AF`；10 cm 处使用。
+
+wrist 之前用大板得到 provisional 内参（RMS 3.36 px），请用小板重做：`--board-preset wrist`。
 - wrist 安装角度固定、随臂移动；标定按现状做，不调整相机。
 
 ## 3. 标定
@@ -107,12 +111,11 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 
 ```bash
 # 内参（三路都做）
-python scripts/calibrate_intrinsics.py --camera front --samples 20
-python scripts/calibrate_intrinsics.py --camera side  --samples 20
-python scripts/calibrate_intrinsics.py --camera wrist --samples 20
+python scripts/calibrate_intrinsics.py --camera wrist --board-preset wrist \
+  --samples 20 --no-preview --min-corners 8 --timeout-s 300
 
-# wrist eye-in-hand（板固定在竖直支架）
-python scripts/calibrate_hand_eye.py --mode wrist --camera wrist --samples 15
+# wrist eye-in-hand（5x5/10mm 板固定在竖直支架）
+python scripts/auto_hand_eye_wrist.py --samples 15
 
 # front/side eye-to-hand（板固定在末端）
 python scripts/calibrate_hand_eye.py --mode fixed --camera front --samples 15

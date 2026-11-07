@@ -22,9 +22,10 @@ pytest
 ## 标定（8×7 / 25 mm ChArUco）
 
 ```bash
-python scripts/calibrate_intrinsics.py --camera front --samples 20
-python scripts/calibrate_hand_eye.py --mode wrist --camera wrist --samples 15
-python scripts/calibrate_hand_eye.py --mode fixed --camera front --samples 15
+# front/side 已用 7x8/25mm 大板标定；wrist 用 5x5/10mm 小板
+python scripts/calibrate_intrinsics.py --camera wrist --board-preset wrist \
+  --samples 20 --no-preview --min-corners 8 --timeout-s 300
+python scripts/auto_hand_eye_wrist.py --samples 15
 python scripts/measure_targets.py
 ```
 

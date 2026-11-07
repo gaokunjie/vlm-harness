@@ -37,6 +37,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--square-mm", type=float, default=25.0)
     p.add_argument("--marker-mm", type=float, default=18.75)
     p.add_argument("--dictionary", default="DICT_4X4_50")
+    p.add_argument("--board-preset", choices=("large", "wrist"), default="large",
+                   help="large: front/side 7x8/25mm; wrist: 5x5/10mm")
     p.add_argument("--samples", type=int, default=20)
     p.add_argument("--marker-mode", action="store_true", help="calibrate from ArUco marker corners")
     p.add_argument("--min-markers", type=int, default=3, help="minimum visible markers in marker mode")
@@ -71,6 +73,9 @@ def _resolve(camera: str, config_path: Path):
 
 def main() -> int:
     args = parser().parse_args()
+    if args.board_preset == "wrist":
+        args.squares_x, args.squares_y = 5, 5
+        args.square_mm, args.marker_mm = 10.0, 7.5
     device, config = _resolve(args.camera, args.camera_config)
     board = make_board(
         args.squares_x,

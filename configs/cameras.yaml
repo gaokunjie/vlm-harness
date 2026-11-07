@@ -5,8 +5,8 @@ cameras:
     role: 腕部相机，随机械臂末端移动
     view: 近景，正对末端吸盘与目标物块
     note: 水平朝前吸盘近景；黄/蓝块在画面上缘，安装角度固定随臂移动
-    calibration_note: 'first marker-mode attempt rejected: RMS 2.28px, fx/fy 1986/1540,
-      k2=-13.6, k3=62; redo regularized with more tilt'
+    calibration_note: provisional large-board (7x8/25mm) intrinsics; redo with 5x5/10mm
+      wrist board
     intrinsic_K:
     - - 1084.3751191596255
       - 0.0

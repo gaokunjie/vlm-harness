@@ -40,6 +40,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--square-mm", type=float, default=25.0)
     p.add_argument("--marker-mm", type=float, default=18.75)
     p.add_argument("--dictionary", default="DICT_4X4_50")
+    p.add_argument("--board-preset", choices=("large", "wrist"), default="large",
+                   help="large: front/side 7x8/25mm; wrist: 5x5/10mm")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     return p
@@ -98,6 +100,9 @@ def _average_transforms(transforms: list[np.ndarray]) -> np.ndarray:
 
 def main() -> int:
     args = parser().parse_args()
+    if args.board_preset == "wrist":
+        args.squares_x, args.squares_y = 5, 5
+        args.square_mm, args.marker_mm = 10.0, 7.5
     config = yaml.safe_load(args.camera_config.read_text(encoding="utf-8"))
     camera, intrinsic, distortion = _camera_data(config, args.camera)
     board = make_board(
