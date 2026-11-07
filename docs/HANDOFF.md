@@ -76,7 +76,8 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 红线交点 B 当前 pixel 约 `(600, 275)`，靠近黄块和机械臂静止位姿；采集前把臂移到 survey 位姿（例如抬高/退开），避免遮挡。
 - 已打印两套板：
 - front/side：**7×8 / 25 mm**（OpenCV 检测为 `(7,8)`，`DICT_4X4_50`，marker 18.75 mm）；内参已完成。
-- wrist：**5×5 / 10 mm**（marker 7.5 mm，`DICT_4X4_50`），A4 PDF 已生成并打印到 `HP_LaserJet_MFP_M227fdw_99C1AF`；10 cm 处使用。
+- wrist：**5×5 / 10 mm**（marker 7.5 mm，`DICT_4X4_50`），A4 PDF 已生成并打印到直连队列 `HP99_direct`（`ipp://NPI99C1AF-3.local:631/ipp/print`，192.168.1.106）；10 cm 处使用。
+- 重打：`lp -d HP99_direct -o media=A4 -o print-scaling=none -o scaling=100 audit/boards/charuco_wrist_5x5_10mm.pdf`。
 
 wrist 之前用大板得到 provisional 内参（RMS 3.36 px），请用小板重做：`--board-preset wrist`。
 - wrist 安装角度固定、随臂移动；标定按现状做，不调整相机。

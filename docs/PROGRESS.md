@@ -167,7 +167,8 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 
 - 生成 **5×5 / 10 mm** ChArUco（marker 7.5 mm，`DICT_4X4_50`），A4、300 DPI、带 10 mm 比例尺。
 - 文件：`audit/boards/charuco_wrist_5x5_10mm.pdf/.png`。
-- 已发送到打印机 **`HP_LaserJet_MFP_M227fdw_99C1AF`**，job `HP_LaserJet_MFP_M227fdw_99C1AF-1`。
+- 原 cups-browsed implicitclass 队列解析不到主机；已新增直连队列 **`HP99_direct`** → `ipp://NPI99C1AF-3.local:631/ipp/print`（192.168.1.106）。
+- 打印 job **`HP99_direct-2`** 已于 21:56:11 完成；旧 implicitclass job 已取消。
 - 打印后请先量一下 10 mm 比例尺；若不是 10 mm，说明打印驱动缩放，需要按 100% 重打。
 - 下一步：用小板在 10 cm 处重做 wrist 内参（`--board-preset wrist`），再跑 `auto_hand_eye_wrist.py`。
 
