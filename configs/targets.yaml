@@ -1,0 +1,16 @@
+# Fixed painted-line intersections.
+# GT is measured once with the independent OpenCV pipeline and validated by
+# robot touch / manual annotation before formal evaluation.
+targets:
+  black_A:
+    line_color: black
+    intersection_gt_xy_m: null
+    measured_at: null
+    calibration_hash: null
+    notes: "two black lines already painted on the table"
+  red_B:
+    line_color: red
+    intersection_gt_xy_m: null
+    measured_at: null
+    calibration_hash: null
+    notes: "two red lines added at a second fixed location"

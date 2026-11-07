@@ -1,0 +1,10 @@
+# Task tolerances (metres). Pre-registered before formal DOE.
+table_z_m: 0.0
+block_size_m: 0.025
+pick_tolerance_m: 0.006
+target_tolerance_m: 0.008
+place_radius_m: 0.0175
+wrist_align_tolerance_m: 0.005
+wrist_gap_tolerance_m: 0.002
+control_frequency_hz: 10.0
+max_episode_steps: 200

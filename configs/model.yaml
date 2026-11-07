@@ -1,0 +1,9 @@
+# DeepSeek is the planner. The harness provider profile is Responses-compatible,
+# so the agent runtime must be Codex (not Claude Code/Messages).
+agent: codex
+model: deepseek-flash
+provider_profile: deepseek.chat_completions
+provider_url: https://api.deepseek.com/v1
+context_policy: identity
+action_profile: direct
+no_sam3: true

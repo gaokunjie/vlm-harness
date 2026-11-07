@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/raw/
+data/derived/
+data/ledger/
+runs/
+outputs/
+.superpowers/
+vendor/uni-robot-agent/

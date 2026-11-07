@@ -1,0 +1,10 @@
+# 由 scripts/calibrate_fk.py 生成，勿手改
+a: 157.738664
+h: 202.124943
+L1: -245.226785
+L2: 145.899572
+c2_deg: 108.703732
+c3_deg: 0.980293
+samples: 27
+holdout_median_mm: 1.022
+holdout_max_mm: 2.121
