@@ -43,17 +43,6 @@ def solve_hand_eye(
     gripper = [np.asarray(pose, dtype=float) for pose in gripper_poses]
     target = [np.asarray(pose, dtype=float) for pose in target_poses]
 
-    identity = np.eye(4)
-    initial_board = gripper[0] @ identity @ target[0]
-    x0 = np.concatenate(
-        [
-            Rotation.from_matrix(identity[:3, :3]).as_rotvec(),
-            identity[:3, 3],
-            Rotation.from_matrix(initial_board[:3, :3]).as_rotvec(),
-            initial_board[:3, 3],
-        ]
-    )
-
     def residual(params: np.ndarray) -> np.ndarray:
         camera_to_tool = _pose_from_params(params[:6])
         board_in_base = _pose_from_params(params[6:])
@@ -68,7 +57,46 @@ def solve_hand_eye(
             )
         return np.concatenate(rows)
 
-    result = least_squares(residual, x0, method="lm", max_nfev=5000)
+    def make_x0(translation, rotation):
+        tool_from_camera = np.eye(4)
+        tool_from_camera[:3, :3] = rotation.as_matrix()
+        tool_from_camera[:3, 3] = translation
+        board_in_base = gripper[0] @ tool_from_camera @ target[0]
+        return np.concatenate(
+            [
+                Rotation.from_matrix(tool_from_camera[:3, :3]).as_rotvec(),
+                tool_from_camera[:3, 3],
+                Rotation.from_matrix(board_in_base[:3, :3]).as_rotvec(),
+                board_in_base[:3, 3],
+            ]
+        )
+
+    rotations = [
+        Rotation.identity(),
+        Rotation.from_euler("x", 90, degrees=True),
+        Rotation.from_euler("x", -90, degrees=True),
+        Rotation.from_euler("y", 90, degrees=True),
+        Rotation.from_euler("z", 90, degrees=True),
+        Rotation.from_euler("x", 180, degrees=True),
+    ]
+    translations = [
+        (0.0, 0.0, 0.0),
+        (0.10, 0.0, 0.0),
+        (-0.10, 0.0, 0.0),
+        (0.0, 0.10, 0.0),
+        (0.0, -0.10, 0.0),
+        (0.0, 0.0, 0.10),
+        (0.0, 0.0, -0.10),
+    ]
+    best = None
+    for rotation in rotations:
+        for translation in translations:
+            candidate = least_squares(
+                residual, make_x0(translation, rotation), method="lm", max_nfev=3000
+            )
+            if best is None or candidate.cost < best.cost:
+                best = candidate
+    result = best
     return HandEyeResult(
         transform=_pose_from_params(result.x[:6]),
         method=method,

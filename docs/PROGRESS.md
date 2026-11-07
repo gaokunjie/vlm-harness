@@ -172,6 +172,14 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 打印后请先量一下 10 mm 比例尺；若不是 10 mm，说明打印驱动缩放，需要按 100% 重打。
 - 下一步：用小板在 10 cm 处重做 wrist 内参（`--board-preset wrist`），再跑 `auto_hand_eye_wrist.py`。
 
+## Wrist 小板手眼：多轮失败，根因待测量（2026-11-07）
+
+- 小板 marker 内参：`f=1567, RMS 2.52`；小板 charuco 内参：`cx=207, fx/fy=1097/1380`——均判为不可用。
+- 诊断：改用大板正则化 K（`f=1084`），机械臂位姿已准确；手眼平移 `-0.945 m`、spread `17.8 mm/6.7°`，拒绝。
+- 多初值（42 组）再解：平移 `-1.47e7`、spread `18.9 mm/8.2°`，拒绝。
+- 结论：**数据本身不一致**（板位姿 vs 机械臂位姿），不是运动/求解器问题。最可能：打印小板被缩放（实际方格不是 10 mm），或 wrist K 不可靠，或板未刚性固定。
+- **暂停自动手眼**。需要测量：10 mm 比例尺实际长度、板外框宽度（应为 50 mm）、板到镜头距离。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。

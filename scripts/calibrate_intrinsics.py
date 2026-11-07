@@ -47,6 +47,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--initial-focal", type=float, default=1000.0)
     p.add_argument("--initial-cx", type=float, default=640.0)
     p.add_argument("--initial-cy", type=float, default=360.0)
+    p.add_argument("--fix-principal", action="store_true", help="fix cx/cy to the initial values")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--no-preview", action="store_true")
@@ -186,6 +187,7 @@ def main() -> int:
             fix_aspect=args.regularized,
             zero_tangent=args.regularized,
             fix_k3=args.regularized,
+            fix_principal=args.fix_principal,
         )
     else:
         result = calibrate_from_detections(

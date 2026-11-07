@@ -55,6 +55,7 @@ def calibrate_from_marker_detections(
     fix_aspect: bool = False,
     zero_tangent: bool = False,
     fix_k3: bool = False,
+    fix_principal: bool = False,
 ) -> IntrinsicsResult:
     """Calibrate from ArUco marker corners, useful for partial close-up views.
 
@@ -101,6 +102,10 @@ def calibrate_from_marker_detections(
         flags |= cv2.CALIB_ZERO_TANGENT_DIST
     if fix_k3:
         flags |= cv2.CALIB_FIX_K3 | cv2.CALIB_FIX_K4 | cv2.CALIB_FIX_K5
+    if fix_principal:
+        if initial_K is None:
+            raise ValueError("fix_principal requires an initial_K")
+        flags |= cv2.CALIB_FIX_PRINCIPAL_POINT
     rms, intrinsic, distortion, _, _ = cv2.calibrateCamera(
         object_views,
         image_views,

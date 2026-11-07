@@ -118,7 +118,10 @@ def test_regularized_marker_calibration_keeps_square_pixels():
         fix_aspect=True,
         zero_tangent=True,
         fix_k3=True,
+        fix_principal=True,
     )
     assert result.intrinsic_K[0, 0] == pytest.approx(result.intrinsic_K[1, 1], rel=1e-9)
+    assert result.intrinsic_K[0, 2] == pytest.approx(640.0)
+    assert result.intrinsic_K[1, 2] == pytest.approx(360.0)
     assert abs(result.intrinsic_K[0, 0] - 800.0) < 80.0
     assert result.rms < 0.2
