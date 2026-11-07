@@ -87,6 +87,9 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 
 ### 3.2 wrist：eye-in-hand（竖直 ChArUco 板）
 
+> 2026-11-07：第一次自动手眼失败——`pydobot.move_to` 默认 `wait=False`，位姿读数滞后；已修复为队列+位姿双等待，并加了手眼结果合理性拒绝。重跑：
+> `python scripts/auto_hand_eye_wrist.py --samples 15`
+
 - wrist 相机竖直安装、光轴水平向前；**板不能放桌面**。
 - 把 8×7/25mm ChArUco 板固定在竖直支架/墙面/第二根臂夹持的刚性板上。
 - 机械臂走 12–20 个位姿，`scripts/calibrate_hand_eye.py --mode wrist --camera wrist`。

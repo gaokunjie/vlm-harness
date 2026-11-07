@@ -156,6 +156,13 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 已写回 `configs/cameras.yaml` 的 `cameras.wrist`。
 - 说明：wrist 近景、吸盘遮挡、板局部可见，marker 外角点噪声大；RMS 3.36 说明仍有残差。先用它做 wrist 手眼，若手眼重投影/残差大，再改用 ≥8 marker/更大倾角，或打印更小的板重测。
 
+## Auto wrist hand-eye attempt 1（失败，已修复待重跑）
+
+- 现象：命令 `pydobot.Dobot.move_to` 默认 `wait=False`，脚本发完指令 0.7 s 就读位姿；实际位姿严重滞后（y 一直 0，x/z 是中间值），手眼数据错位。
+- 结果：`T_tool_from_optical` 平移 ~1e6 m，board spread 12.39 mm / 3.53°，已从 `configs/cameras.yaml` 作废删除。
+- 修复：`DobotRobot.move_pose` 改为队列索引 + 位姿稳定双等待；`auto_hand_eye_wrist.py` 增加手眼平移合理性检查和 spread 拒绝（>15 mm 或 >2.5° 不保存）。
+- 待你重跑修复后的脚本。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。

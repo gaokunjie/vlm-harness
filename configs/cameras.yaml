@@ -28,6 +28,9 @@ cameras:
     - 1280
     calibration_date: '2026-11-07'
     calibration_mode: marker
+    hand_eye_note: 'auto wrist attempt rejected: pydobot.move_to did not reach commanded
+      poses (y stayed 0), hand-eye translation ~1e6 m; redo with motion-completion
+      wait/joint moves'
   front:
     device: /dev/video2
     usb_port: usb-0000:00:14.0-2

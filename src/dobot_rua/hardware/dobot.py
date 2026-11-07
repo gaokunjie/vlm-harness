@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+import struct
+import time
 from typing import Any
 
 from .interface import RobotState
@@ -18,6 +21,11 @@ class DobotRobot:
             from pydobot import Dobot
 
             self._driver = Dobot(port=self.port, verbose=False)
+
+    def set_speed(self, velocity: int, acceleration: int) -> None:
+        if self._driver is None:
+            raise RuntimeError("robot is not connected")
+        self._driver.speed(int(velocity), int(acceleration))
 
     def close(self) -> None:
         if self._driver is not None:
@@ -54,7 +62,47 @@ class DobotRobot:
     ) -> None:
         if self._driver is None:
             raise RuntimeError("robot is not connected")
-        self._driver.move_to(float(x_mm), float(y_mm), float(z_mm), float(r_deg))
+        target = (float(x_mm), float(y_mm), float(z_mm), float(r_deg))
+        if not (
+            hasattr(self._driver, "_set_ptp_cmd")
+            and hasattr(self._driver, "_get_queued_cmd_current_index")
+        ):
+            self._driver.move_to(*target, wait=True)
+            return
+        from pydobot.enums import PTPMode
+
+        response = self._driver._set_ptp_cmd(
+            *target, mode=PTPMode.MOVL_XYZ, wait=False
+        )
+        queued_index = None
+        if response is not None and len(response.params) >= 4:
+            queued_index = int(struct.unpack_from("L", response.params, 0)[0])
+        deadline = time.monotonic() + float(timeout_s)
+        while time.monotonic() < deadline:
+            try:
+                current = self._driver._get_queued_cmd_current_index()
+            except Exception:
+                break
+            if queued_index is None or current >= queued_index:
+                break
+            time.sleep(0.05)
+        if queued_index is None:
+            time.sleep(0.4)
+        # Wait until the measured pose stops changing; the queue index alone
+        # does not prove the physical move has settled.
+        last = None
+        stable = 0
+        while time.monotonic() < deadline + 2.0:
+            state = self.read_state()
+            position = (state.x_mm, state.y_mm, state.z_mm)
+            if last is not None and math.dist(position, last) < 0.3:
+                stable += 1
+                if stable >= 4:
+                    break
+            else:
+                stable = 0
+            last = position
+            time.sleep(0.1)
 
     def move_joints(
         self,
