@@ -56,6 +56,20 @@ v4l2-ctl --list-devices
 4. 桌面高度、块尺寸、吸盘尖端 TCP。
 5. 黑线交点 A、红线交点 B 是否都在 front FOV 和机械臂可达域内。
 
+## 2b. 真机只读 server（已完成一次）
+
+```bash
+python -m dobot_rua.integration.server --run-id real-bringup \
+  --instruction "Place the red block at the black lines intersection." \
+  --output-dir ./runs/real_bringup --port 18761
+```
+
+- `/info` 应返回三路相机；标定前 `has_calibration=false`。
+- `/snapshots/latest` 应包含吸盘尖位姿、关节角、三路 1280×720 图像。
+- 这一步只读位姿和取帧，不发运动指令；确认无误后再做标定。
+- 参考图在 `audit/cameras/real_*.png`（未入库）。
+- 当前观察：front 黑十字清楚；红线交点 B 还没画；wrist 块在画面上缘，安装角度可能需要微调。
+
 ## 3. 标定
 
 ### 3.1 front / side：eye-to-hand

@@ -71,6 +71,40 @@ def test_episode_identity_returns_instruction_and_metadata():
     assert metadata["task_id"] == "line_intersection"
 
 
+def test_description_can_declare_uncalibrated_cameras():
+    adapter = DobotAdapter(
+        robot=FakeRobot(),
+        camera_source=FakeCameraSource(),
+        config=AdapterConfig(has_calibration=False),
+        episode_id="trial-u",
+        instruction="test",
+        metadata={},
+    )
+    assert all(camera.has_calibration is False for camera in adapter.description.cameras)
+
+
+def test_close_releases_camera_source():
+    class ClosingSource(FakeCameraSource):
+        def __init__(self):
+            super().__init__()
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    source = ClosingSource()
+    adapter = DobotAdapter(
+        robot=FakeRobot(),
+        camera_source=source,
+        config=AdapterConfig(),
+        episode_id="trial-c",
+        instruction="test",
+        metadata={},
+    )
+    adapter.close()
+    assert source.closed is True
+
+
 def test_step_pose_updates_state_and_returns_receipt():
     adapter = _adapter()
     command = PoseCommand(

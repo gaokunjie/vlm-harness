@@ -52,6 +52,7 @@ class AdapterConfig:
     y_range_mm: tuple[float, float] = (-300.0, 300.0)
     z_range_mm: tuple[float, float] = (-30.0, 300.0)
     cameras: tuple[str, ...] = ("front", "side", "wrist")
+    has_calibration: bool = True
 
 
 def _tool_quaternion(r_deg: float) -> tuple[float, float, float, float]:
@@ -115,7 +116,7 @@ class DobotAdapter:
             ],
             cameras=[
                 CameraDescription(name=name, role=("wrist" if name == "wrist" else "scene"),
-                                  has_depth=False, has_calibration=True)
+                                  has_depth=False, has_calibration=self.config.has_calibration)
                 for name in self.config.cameras
             ],
             control_frequency_hz=self.config.control_hz,
@@ -308,6 +309,9 @@ class DobotAdapter:
 
     def close(self) -> None:
         self._finished = True
+        close_cameras = getattr(self.camera_source, "close", None)
+        if close_cameras is not None:
+            close_cameras()
         self.robot.close()
 
     def set_success_fn(self, fn: Any) -> None:

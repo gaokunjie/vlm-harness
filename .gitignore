@@ -11,3 +11,5 @@ outputs/
 vendor/uni-robot-agent/
 
 *.egg-info/
+
+audit/cameras/

@@ -5,7 +5,7 @@
 - 上游：uni-robot-agent `f3e0ec0`（v0.1.1）
 - 设计：`../docs/superpowers/specs/2026-11-07-rua-line-intersection-design.md`
 - 计划：`../docs/superpowers/plans/2026-11-07-rua-line-intersection-implementation.md`
-- 当前测试：**64 passed**（`.venv/bin/python -m pytest`）
+- 当前测试：**71 passed**（`.venv/bin/python -m pytest`）
 
 ## 已完成（无需用户/硬件）
 
@@ -82,6 +82,33 @@ UNI_ROBOT_AGENT_API_KEY="$ANTHROPIC_AUTH_TOKEN" uni-robot-agent run \
 另外：`--tool-return-mode background` 下 DeepSeek 的 `wait_for_tool` 轨迹导出报 `provider context contains unmatched tool calls or responses`，生成 `train.invalid.jsonl`；改用 `--tool-return-mode immediate` 后 `train.jsonl` 正常。正式实验若要 background 模式，需要先修这个导出路径。
 
 **Mock 成功的口径**：最终吸盘尖 XY 距黑线交点 ≤20 mm 且真空已关；mock 不模拟物块搬运，`verify_place` 返回 `placed=null`，agent 的总结也如实说明了这一点。
+
+## 真机只读 bring-up（2026-11-07）
+
+已启动 real server（只读位姿 + 三路取帧，未发任何运动指令）：
+
+```bash
+python -m dobot_rua.integration.server --run-id real-bringup \
+  --instruction "Place the red block at the black lines intersection." \
+  --output-dir ./runs/real_bringup --port 18761
+```
+
+`/info` 正常返回；`has_calibration=false`（还没标定，符合预期）。
+`/snapshots/latest` 状态：
+
+- 吸盘尖：`x=147.04 mm, y=0, z=6.92 mm`
+- 关节：`[0, 0.431, 0.906, 0] rad`（约 `[0°, 24.7°, 51.9°, 0°]`）
+- 姿态四元数：`(0,1,0,0)`（工具朝下）
+- 三路相机：1280×720，K/T 均为 `null`
+- 参考图：`audit/cameras/real_front.png` / `real_wrist.png` / `real_side.png`
+
+画面观察：
+
+1. **front**：能看到白板、红/蓝块、黑十字（约在画面 `(710, 350)`）；机械臂从右侧进入画面。红线交点 B 尚未出现，需要你补画。
+2. **wrist**：水平朝前的吸盘近景；吸盘居中、清晰，红/蓝块在画面上缘且虚焦。用于相对位置/接触确认可行，但块在视野上缘，安装角度或标定要特别处理。
+3. **side**：侧视能看到红/蓝块和吸盘高度，适合做垂直/深度上下文。
+
+这次只读 bring-up 没有移动机械臂；`RealCameraSource` 已实现 RGB 约定、MJPG fourcc 归一化（`mjpeg→MJPG`）、标定透传和 close 释放。
 
 ## 已知边界 / 未完成
 
