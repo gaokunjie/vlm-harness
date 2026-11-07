@@ -29,6 +29,16 @@ export UNI_ROBOT_AGENT_API_KEY='<deepseek key>'   # 或 DEEPSEEK_API_KEY / ANTHR
 - 期望：`ok_calls=10`、`image_ok=10`、`errors=[]`。
 - 如果 401/403，说明当前 key 不适用于 `https://api.deepseek.com/v1`，需要单独的 DeepSeek API key。
 
+## 1b. 官方 harness mock smoke（已完成）
+
+已跑通一次完整的官方工具链路（DeepSeek + Codex runtime + `dobot_magician` integration + mock environment）：
+
+- `task_success=True`、`agent_finished=True`、32 tool calls、106.5 s。
+- 结果目录：`runs/mock_agent3/dobot_magician_codex_1794054815_09b058ea/`。
+- 复跑命令见 `docs/PROGRESS.md` 的「官方 harness + DeepSeek + mock 环境」。
+- 建议加 `--tool-return-mode immediate`：background 模式下 DeepSeek 的 `wait_for_tool` 轨迹会触发训练导出校验错误。
+- 这只验证工具/协议/模型链路，不验证真机运动、标定或物块搬运。
+
 ## 2. 硬件 bring-up（需要机械臂/相机）
 
 前置检查：

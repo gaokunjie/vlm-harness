@@ -47,6 +47,21 @@ def test_measure_intersection_gt_is_independent_and_accurate():
     assert np.allclose(result.intersection_xyz_m, (0.0, 0.0, 0.0), atol=0.005)
 
 
+def test_black_detection_excludes_red_lines():
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    cv2.line(image, (200, 300), (600, 300), (0, 0, 0), 3)
+    cv2.line(image, (400, 100), (400, 500), (0, 0, 0), 3)
+    cv2.line(image, (150, 350), (350, 350), (0, 0, 255), 3)
+    cv2.line(image, (250, 250), (250, 450), (0, 0, 255), 3)
+    K, T = _camera()
+    black = detect_line_intersection(image, K, T, 0.0, "black")
+    assert black is not None
+    assert np.allclose(black.intersection_uv, (400.0, 300.0), atol=5.0)
+    red = detect_line_intersection(image, K, T, 0.0, "red")
+    assert red is not None
+    assert np.allclose(red.intersection_uv, (250.0, 350.0), atol=5.0)
+
+
 def test_measure_intersection_gt_does_not_share_the_agent_mask(monkeypatch):
     image = _line_scene((0, 0, 0))
     K, T = _camera()

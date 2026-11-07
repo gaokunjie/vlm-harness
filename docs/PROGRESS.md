@@ -5,7 +5,7 @@
 - 上游：uni-robot-agent `f3e0ec0`（v0.1.1）
 - 设计：`../docs/superpowers/specs/2026-11-07-rua-line-intersection-design.md`
 - 计划：`../docs/superpowers/plans/2026-11-07-rua-line-intersection-implementation.md`
-- 当前测试：**56 passed**（`.venv/bin/python -m pytest`）
+- 当前测试：**64 passed**（`.venv/bin/python -m pytest`）
 
 ## 已完成（无需用户/硬件）
 
@@ -45,6 +45,43 @@
 | `aggregate_by_dimension` 不是五维分 | 用每阶段独立通过情况算 20 分制维度分；未覆盖维度返回 `None` | `test_aggregate_by_dimension_uses_stage_weights` |
 | 可达掩码含限位边界；adapter 不查关节限位 | 采样加 2° margin；adapter 传 `fk_params`+`safety_limits` 时用 IK 拒绝不可达 | `test_joint_samples_respect_limit_margin` / `test_adapter_rejects_unreachable_pose_when_kinematics_supplied` |
 | 姿态谎报 identity；不拒绝姿态变化 | 工具朝下四元数 `(0,1,0,0)`；目标姿态与当前固定姿态夹角 >0.35 rad 拒绝 | `test_read_state_reports_tool_down_orientation` / `test_step_pose_rejects_orientation_change` |
+
+## 官方 harness + DeepSeek + mock 环境（2026-11-07）
+
+跑通命令（mock 服务 + 官方 CLI）：
+
+```bash
+python -m dobot_rua.integration.mock_server --run-id mock-3 \
+  --instruction "Place the red block at the black lines intersection." \
+  --output-dir ./runs/mock_env3 --port 18760
+
+UNI_ROBOT_AGENT_API_KEY="$ANTHROPIC_AUTH_TOKEN" uni-robot-agent run \
+  --integration dobot_magician --agent codex --model deepseek-flash \
+  --provider-profile deepseek.chat_completions \
+  --provider-url https://api.deepseek.com/v1 \
+  --context-policy identity --action-profile direct --no-sam3 \
+  --tool-return-mode immediate \
+  --env-url http://127.0.0.1:18760 \
+  --instruction "Place the red block at the black lines intersection." \
+  --output-dir ./runs/mock_agent3 --max-turns 24 --episode-timeout-s 420
+```
+
+结果：`task_success=True`、`agent_finished=True`、`session end │ success`；turns=1、steps=33、tool_calls=32、elapsed=106.5 s；`train.jsonl` 正常导出。
+
+工具序列（官方工具 + 自定义工具）：
+
+`list_skills → capture_scene → read_skill → find_line_intersection → list_objects → move → wrist_contact_gap → wrist_lateral_offset → move → grasp → move → wrist_verify_grasp → move → wrist_lateral_offset → move → release → move → verify_place → list_objects → finish`
+
+关键数值：红块 `(0.000, 0.000)`，黑线交点 `(0.160, -0.120)`；agent 自己把四元数 `(0,1,0,0)` 转成 XYZ Euler `[π,0,0]` 并复制到 `move`，说明固定姿态契约可用。
+
+这次 smoke 发现并修掉的两个真实问题：
+
+1. **`CameraFrame.rgb` 是 RGB，不是 BGR**：mock 源最初返回 BGR，PIL 存 PNG 后红蓝互换；已在 `MockCameraSource` 转 RGB，并加测试。
+2. **黑线掩码不能只用灰度 <80**：红色线的亮度约 76，会被当黑线；已改为 HSV 低饱和+低亮度，并加混合黑/红线的回归测试。
+
+另外：`--tool-return-mode background` 下 DeepSeek 的 `wait_for_tool` 轨迹导出报 `provider context contains unmatched tool calls or responses`，生成 `train.invalid.jsonl`；改用 `--tool-return-mode immediate` 后 `train.jsonl` 正常。正式实验若要 background 模式，需要先修这个导出路径。
+
+**Mock 成功的口径**：最终吸盘尖 XY 距黑线交点 ≤20 mm 且真空已关；mock 不模拟物块搬运，`verify_place` 返回 `placed=null`，agent 的总结也如实说明了这一点。
 
 ## 已知边界 / 未完成
 

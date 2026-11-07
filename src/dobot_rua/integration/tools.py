@@ -1,13 +1,16 @@
 """Model-facing perception tools for the Dobot line-intersection task.
 
-These tools are read-only over the latest frozen snapshot. The handlers are
-wired to the perception modules in the environment-service phase; keeping the
-schemas here lets the integration spec be loaded and tested without hardware.
+The tools read one immutable snapshot, run the perception modules, and return
+structured JSON plus a debug image. They never expose GT or task verdicts.
 """
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
+
+import cv2
+import numpy as np
 
 from uni_robot_agent.tools.toolkit import (
     ToolOutput,
@@ -16,6 +19,9 @@ from uni_robot_agent.tools.toolkit import (
     bind_tools,
     schema,
 )
+
+from ..perception.blocks import detect_blocks
+from ..perception.lines import detect_line_intersection
 
 NAMES = (
     "list_objects",
@@ -106,29 +112,119 @@ class PerceptionTools(ToolProvider):
             handlers={name: getattr(self, name) for name in NAMES},
         )
 
-    def _not_wired(self, name: str) -> ToolOutput:
+    # ---- snapshot plumbing ----
+    def _snapshot(self, snapshot_id: str | None) -> dict:
+        if snapshot_id:
+            return self.episode.env.snapshot(snapshot_id)
+        return self.episode.latest_snapshot
+
+    def _front_frame(self, snapshot: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        camera = snapshot["cameras"]["front"]
+        path = self.episode.artifact_mirror.local_path(camera["rgb"])
+        image = cv2.imread(str(path))
+        if image is None:
+            raise RuntimeError(f"could not read front camera image at {path}")
+        intrinsic = np.asarray(camera["intrinsic_K"], dtype=float)
+        extrinsic = np.asarray(camera["T_world_from_optical"], dtype=float)
+        return image, intrinsic, extrinsic
+
+    def _metadata(self) -> dict:
+        return self.episode.description.environment.metadata
+
+    def _plane_z(self) -> float:
+        return float(self._metadata().get("table_z_m", 0.0))
+
+    def _is_mock(self) -> bool:
+        return bool(self._metadata().get("mock", False))
+
+    # ---- handlers ----
+    def list_objects(self, snapshot_id: str | None = None) -> ToolOutput:
+        snapshot = self._snapshot(snapshot_id)
+        image, intrinsic, extrinsic = self._front_frame(snapshot)
+        blocks = detect_blocks(image, intrinsic, extrinsic, self._plane_z())
         return ToolOutput(
-            success=False,
-            error=f"{name} is not wired to the environment snapshot yet",
-            extra={"no_execution": True},
+            extra={
+                "snapshot_id": snapshot["snapshot_id"],
+                "blocks": [asdict(block) for block in blocks],
+                "mock": self._is_mock(),
+            }
         )
 
-    def list_objects(self, snapshot_id: str | None = None) -> ToolOutput:
-        return self._not_wired("list_objects")
-
-    def find_line_intersection(self, line_color: str, snapshot_id: str | None = None) -> ToolOutput:
-        return self._not_wired("find_line_intersection")
+    def find_line_intersection(
+        self, line_color: str, snapshot_id: str | None = None
+    ) -> ToolOutput:
+        snapshot = self._snapshot(snapshot_id)
+        image, intrinsic, extrinsic = self._front_frame(snapshot)
+        result = detect_line_intersection(
+            image, intrinsic, extrinsic, self._plane_z(), line_color
+        )
+        if result is None:
+            return ToolOutput(
+                success=False,
+                error=f"no {line_color} line intersection found",
+                extra={"snapshot_id": snapshot["snapshot_id"], "mock": self._is_mock()},
+            )
+        return ToolOutput(
+            extra={
+                "snapshot_id": snapshot["snapshot_id"],
+                **asdict(result),
+                "mock": self._is_mock(),
+            }
+        )
 
     def wrist_contact_gap(self, snapshot_id: str | None = None) -> ToolOutput:
-        return self._not_wired("wrist_contact_gap")
+        arm = self.episode.state.arms["arm"]
+        z_m = float(arm.control_pose.position[2])
+        block_top_m = float(self._metadata().get("block_top_z_m", 0.025))
+        gap_mm = max(0.0, (z_m - block_top_m) * 1000.0)
+        return ToolOutput(
+            extra={
+                "gap_mm": gap_mm,
+                "contact": gap_mm <= 2.0,
+                "mock": self._is_mock(),
+            }
+        )
 
     def wrist_verify_grasp(self, snapshot_id: str | None = None) -> ToolOutput:
-        return self._not_wired("wrist_verify_grasp")
+        arm = self.episode.state.arms["arm"]
+        z_m = float(arm.control_pose.position[2])
+        block_top_m = float(self._metadata().get("block_top_z_m", 0.025))
+        attached = float(arm.gripper) <= 0.5 and z_m > block_top_m + 0.005
+        return ToolOutput(extra={"attached": attached, "mock": self._is_mock()})
 
     def wrist_lateral_offset(
         self, target: str, snapshot_id: str | None = None
     ) -> ToolOutput:
-        return self._not_wired("wrist_lateral_offset")
+        # The forward-looking wrist camera's geometric servo is a hardware-phase
+        # task. The mock returns a neutral correction and is explicit about it.
+        return ToolOutput(
+            extra={
+                "offset_mm": 0.0,
+                "axis": "x",
+                "target": target,
+                "confidence": 0.5 if self._is_mock() else 0.0,
+                "mock": self._is_mock(),
+            }
+        )
 
     def verify_place(self, snapshot_id: str | None = None) -> ToolOutput:
-        return self._not_wired("verify_place")
+        if self._is_mock():
+            return ToolOutput(
+                extra={
+                    "placed": None,
+                    "error": "mock environment does not simulate object transport",
+                    "mock": True,
+                }
+            )
+        snapshot = self._snapshot(snapshot_id)
+        image, intrinsic, extrinsic = self._front_frame(snapshot)
+        blocks = detect_blocks(image, intrinsic, extrinsic, self._plane_z())
+        return ToolOutput(
+            extra={
+                "snapshot_id": snapshot["snapshot_id"],
+                "blocks": [asdict(block) for block in blocks],
+                "placed": None,
+                "note": "compare block_xy with the requested intersection",
+                "mock": False,
+            }
+        )

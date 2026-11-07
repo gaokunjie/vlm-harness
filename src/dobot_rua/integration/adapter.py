@@ -131,6 +131,10 @@ class DobotAdapter:
             },
         )
 
+    def episode_identity(self) -> tuple[str, dict[str, Any]]:
+        """Prepared-episode identity consumed by ``serve_episode``."""
+        return self.instruction, dict(self.metadata)
+
     def read_state(self) -> EnvironmentState:
         robot = self.robot.read_state()
         return EnvironmentState(

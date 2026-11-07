@@ -20,10 +20,11 @@ class LineIntersection:
 
 
 def _line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
-    if line_color == "black":
-        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-        return cv2.inRange(gray, 0, 80)
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    if line_color == "black":
+        # Black paint is dark AND unsaturated. A gray threshold alone would
+        # also include saturated red/blue lines whose luminance is low.
+        return cv2.inRange(hsv, np.array((0, 0, 0)), np.array((180, 90, 90)))
     if line_color == "red":
         low = cv2.inRange(hsv, np.array((0, 80, 50)), np.array((10, 255, 255)))
         high = cv2.inRange(hsv, np.array((170, 80, 50)), np.array((180, 255, 255)))

@@ -64,6 +64,13 @@ def test_read_state_is_a_contract_state():
     assert state.native_steps == 0
 
 
+def test_episode_identity_returns_instruction_and_metadata():
+    adapter = _adapter()
+    instruction, metadata = adapter.episode_identity()
+    assert instruction == adapter.instruction
+    assert metadata["task_id"] == "line_intersection"
+
+
 def test_step_pose_updates_state_and_returns_receipt():
     adapter = _adapter()
     command = PoseCommand(
