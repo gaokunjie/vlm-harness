@@ -9,3 +9,5 @@ runs/
 outputs/
 .superpowers/
 vendor/uni-robot-agent/
+
+*.egg-info/
