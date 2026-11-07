@@ -23,8 +23,10 @@ class FakeCameraSource:
             [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]
         )
         self.T[:3, 3] = [0.0, 0.0, 1.0]
+        self.last_tool_pose = None
 
-    def capture(self, cameras=None):
+    def capture(self, cameras=None, tool_pose=None):
+        self.last_tool_pose = tool_pose
         image = np.full((480, 640, 3), 255, dtype=np.uint8)
         names = cameras or ["front", "side", "wrist"]
         return {
@@ -130,6 +132,21 @@ def test_capture_freezes_three_calibrated_cameras():
         assert frame.rgb.shape == (480, 640, 3)
         assert frame.intrinsic_K.shape == (3, 3)
         assert frame.T_world_from_optical.shape == (4, 4)
+
+
+def test_capture_passes_current_tool_pose():
+    source = FakeCameraSource()
+    adapter = DobotAdapter(
+        robot=FakeRobot(),
+        camera_source=source,
+        config=AdapterConfig(),
+        episode_id="trial-pose",
+        instruction="test",
+        metadata={},
+    )
+    adapter.capture()
+    assert source.last_tool_pose is not None
+    assert source.last_tool_pose.shape == (4, 4)
 
 
 def test_step_joints_is_rejected_for_fixed_pose_control():

@@ -23,6 +23,7 @@ class CameraSpec:
     fourcc: str = "MJPG"
     intrinsic_K: list | None = None
     T_world_from_optical: list | None = None
+    T_tool_from_optical: list | None = None
 
 
 def _normalize_fourcc(value: str) -> str:
@@ -49,6 +50,7 @@ def load_camera_specs(path: str | Path) -> dict[str, CameraSpec]:
             fourcc=fourcc,
             intrinsic_K=item.get("intrinsic_K"),
             T_world_from_optical=item.get("T_world_from_optical"),
+            T_tool_from_optical=item.get("T_tool_from_optical"),
         )
     return specs
 
@@ -65,7 +67,11 @@ class RealCameraSource:
         self._capture_factory = capture_factory or self._opencv_capture
         self._captures: dict[str, Any] = {}
         self.has_calibration = bool(self.specs) and all(
-            spec.intrinsic_K is not None and spec.T_world_from_optical is not None
+            spec.intrinsic_K is not None
+            and (
+                spec.T_world_from_optical is not None
+                or spec.T_tool_from_optical is not None
+            )
             for spec in self.specs.values()
         )
 
@@ -84,7 +90,11 @@ class RealCameraSource:
             self._captures[name] = self._capture_factory(self.specs[name])
         return self._captures[name]
 
-    def capture(self, cameras: list[str] | None = None) -> dict[str, CameraFrame]:
+    def capture(
+        self,
+        cameras: list[str] | None = None,
+        tool_pose: np.ndarray | None = None,
+    ) -> dict[str, CameraFrame]:
         names = list(cameras) if cameras else list(self.specs)
         frames: dict[str, CameraFrame] = {}
         for name in names:
@@ -100,6 +110,18 @@ class RealCameraSource:
             if frame is None:
                 raise RuntimeError(f"camera {name} returned no frame")
             spec = self.specs[name]
+            if spec.T_tool_from_optical is not None:
+                if tool_pose is None:
+                    raise ValueError(
+                        f"camera {name} is eye-in-hand; a current tool pose is required"
+                    )
+                world_from_optical = np.asarray(tool_pose, dtype=float) @ np.asarray(
+                    spec.T_tool_from_optical, dtype=float
+                )
+            elif spec.T_world_from_optical is not None:
+                world_from_optical = np.asarray(spec.T_world_from_optical, dtype=float)
+            else:
+                world_from_optical = None
             frames[name] = CameraFrame(
                 rgb=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
                 depth_m=None,
@@ -108,11 +130,7 @@ class RealCameraSource:
                     if spec.intrinsic_K is None
                     else np.asarray(spec.intrinsic_K, dtype=float)
                 ),
-                T_world_from_optical=(
-                    None
-                    if spec.T_world_from_optical is None
-                    else np.asarray(spec.T_world_from_optical, dtype=float)
-                ),
+                T_world_from_optical=world_from_optical,
             )
         return frames
 

@@ -16,6 +16,7 @@ from scipy.spatial.transform import Rotation
 
 from ..hardware.interface import RobotInterface, RobotState
 from ..hardware.safety import SafetyError, SafetyLimits
+from ..geometry import pose_to_matrix
 from ..kinematics import FKParams, inverse_kinematics
 
 from uni_robot_agent.services.environment.contracts import (
@@ -37,7 +38,9 @@ from uni_robot_agent.services.environment.snapshots import CameraFrame, Captured
 
 
 class CameraSource(Protocol):
-    def capture(self, cameras: list[str] | None = None) -> dict[str, CameraFrame]: ...
+    def capture(
+        self, cameras: list[str] | None = None, tool_pose: np.ndarray | None = None
+    ) -> dict[str, CameraFrame]: ...
 
 
 @dataclass(frozen=True)
@@ -285,7 +288,12 @@ class DobotAdapter:
     def capture(
         self, cameras: list[str] | None = None, *, high_resolution: bool = False
     ) -> CapturedObservation:
-        frames = self.camera_source.capture(cameras)
+        robot = self.robot.read_state()
+        tool_pose = pose_to_matrix(
+            (robot.x_mm / 1000.0, robot.y_mm / 1000.0, robot.z_mm / 1000.0),
+            _tool_quaternion(robot.r_deg),
+        )
+        frames = self.camera_source.capture(cameras, tool_pose=tool_pose)
         return CapturedObservation(
             episode_id=self.episode_id,
             state_version=self._state_version,

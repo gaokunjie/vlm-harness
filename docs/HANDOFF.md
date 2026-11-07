@@ -85,13 +85,41 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 用机器人触碰 5–10 个桌面点验证，记录 `calibration_bias_mm`。
 - 目标：重投影 <2 px，XY 误差 <3 mm。
 
-### 3.2 wrist：eye-in-hand（竖直标定板）
+### 3.2 wrist：eye-in-hand（竖直 ChArUco 板）
 
-- wrist 相机竖直安装、光轴水平向前；**棋盘格不能放桌面**。
-- 把棋盘格固定在竖直支架/墙面/第二根臂夹持的刚性板上。
-- 机械臂走 12–20 个位姿，`cv2.calibrateHandEye`；留出 3–5 个位姿验证。
-- 标定吸盘尖在 wrist 图像中的参考位置，用于接触间隙/附着判断。
+- wrist 相机竖直安装、光轴水平向前；**板不能放桌面**。
+- 把 8×7/25mm ChArUco 板固定在竖直支架/墙面/第二根臂夹持的刚性板上。
+- 机械臂走 12–20 个位姿，`scripts/calibrate_hand_eye.py --mode wrist --camera wrist`。
+- 保存 `cameras.wrist.T_tool_from_optical`；运行时 `T_world_from_optical = T_world_tool @ T_tool_from_optical`。
 - 目标：3D 误差 <2–3 mm。
+
+### 3.3 front/side：eye-to-hand（fixed 模式）
+
+- 把同一块 ChArUco 板**刚性固定在机械臂末端**（胶带/夹具；吸盘能吸住更好）。
+- 固定相机看板，机械臂走 12–20 个位姿；`scripts/calibrate_hand_eye.py --mode fixed --camera front/side`。
+- 保存 `cameras.<role>.T_world_from_optical`。
+- 如果无法把板固定在末端，需要改用“桌面固定板 + 机器人触碰点”的替代流程，告诉我后再补脚本。
+
+### 3.4 标定运行顺序
+
+```bash
+# 内参（三路都做）
+python scripts/calibrate_intrinsics.py --camera front --samples 20
+python scripts/calibrate_intrinsics.py --camera side  --samples 20
+python scripts/calibrate_intrinsics.py --camera wrist --samples 20
+
+# wrist eye-in-hand（板固定在竖直支架）
+python scripts/calibrate_hand_eye.py --mode wrist --camera wrist --samples 15
+
+# front/side eye-to-hand（板固定在末端）
+python scripts/calibrate_hand_eye.py --mode fixed --camera front --samples 15
+python scripts/calibrate_hand_eye.py --mode fixed --camera side  --samples 15
+
+# 交点 GT（先把机械臂移开，避免遮挡红线）
+python scripts/measure_targets.py
+```
+
+> 默认 8×7、25 mm 方格、marker 18.75 mm、`DICT_5X5_1000`。如果打印时用了别的 dictionary/marker 尺寸，跑脚本时覆盖 `--dictionary` / `--marker-mm`。
 
 ### 3.3 交点 GT
 

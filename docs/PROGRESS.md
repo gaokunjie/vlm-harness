@@ -5,7 +5,7 @@
 - 上游：uni-robot-agent `f3e0ec0`（v0.1.1）
 - 设计：`../docs/superpowers/specs/2026-11-07-rua-line-intersection-design.md`
 - 计划：`../docs/superpowers/plans/2026-11-07-rua-line-intersection-implementation.md`
-- 当前测试：**73 passed**（`.venv/bin/python -m pytest`）
+- 当前测试：**78 passed**（`.venv/bin/python -m pytest`）
 
 ## 已完成（无需用户/硬件）
 
@@ -118,6 +118,15 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 真实画面里红线偏暗/低饱和、黑线偏暗青；黑/红掩码已放宽（黑 `S,V<120`；红 `H 0–20/160–180, S≥40`），并降低 Hough 阈值。
 - 当前 front 静止位姿下机械臂会压到红线附近；**采集前先把臂移到 survey 位姿**，否则红线检测置信度低。
 - 参考帧：`audit/cameras/scene2_front.png`、`scene2_wrist.png`、`scene2_side.png`（未入库）。
+
+## ChArUco 标定模块（2026-11-07）
+
+- `calibration/charuco.py`：8×7 / 25 mm 板构造与检测（marker 默认 18.75 mm，dictionary 默认 `DICT_5X5_1000`）。
+- `calibration/intrinsics.py`：由多视角 ChArUco 检测做 `calibrateCamera`；合成测试能恢复焦距。
+- `calibration/hand_eye.py`：OpenCV 5 headless 没有 `calibrateHandEye`，改用 SciPy 最小二乘解 AX=XB；合成测试恢复 `T_tool_from_optical`。
+- `RealCameraSource` 支持 `T_tool_from_optical` + 当前 `tool_pose` → 运行时合成 wrist 外参；adapter 在 `capture()` 时传入当前工具位姿。
+- 脚本：`scripts/calibrate_intrinsics.py`、`scripts/calibrate_hand_eye.py`（wrist / fixed 两种模式）、`scripts/measure_targets.py`。
+- **实际标定还没跑**：需要你按 HANDOFF §3 摆板/移动机械臂；front/side 的 fixed 模式要求把板刚性固定在末端，wrist 的板固定在竖直支架上。
 
 ## 已知边界 / 未完成
 

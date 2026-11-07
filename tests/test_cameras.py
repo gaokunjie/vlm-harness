@@ -49,6 +49,29 @@ def test_real_camera_source_passes_calibration_through():
     assert np.allclose(frames["front"].T_world_from_optical, T)
 
 
+def test_wrist_tool_from_optical_composes_with_tool_pose():
+    tool_from_camera = np.eye(4)
+    tool_from_camera[:3, 3] = [0.01, 0.0, 0.05]
+    source = RealCameraSource(
+        {
+            "wrist": CameraSpec(
+                name="wrist",
+                device="fake",
+                intrinsic_K=[[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]],
+                T_tool_from_optical=tool_from_camera.tolist(),
+            )
+        },
+        capture_factory=lambda spec: FakeCapture(np.zeros((4, 4, 3), dtype=np.uint8)),
+    )
+    tool_pose = np.eye(4)
+    tool_pose[:3, 3] = [0.1, 0.2, 0.3]
+    frames = source.capture(["wrist"], tool_pose=tool_pose)
+    assert source.has_calibration is True
+    assert np.allclose(
+        frames["wrist"].T_world_from_optical, tool_pose @ tool_from_camera
+    )
+
+
 def test_load_camera_specs_reads_roles(tmp_path):
     path = tmp_path / "cameras.yaml"
     path.write_text(

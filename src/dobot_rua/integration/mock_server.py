@@ -52,7 +52,9 @@ class MockCameraSource:
         self._extrinsic[:3, 3] = [0.0, 0.0, 1.0]
         self._image = _scene()
 
-    def capture(self, cameras: list[str] | None = None) -> dict[str, CameraFrame]:
+    def capture(
+        self, cameras: list[str] | None = None, tool_pose=None
+    ) -> dict[str, CameraFrame]:
         names = list(cameras) if cameras else list(CAMERAS)
         # CameraFrame.rgb is RGB; the scene is drawn with OpenCV's BGR order.
         rgb = cv2.cvtColor(self._image, cv2.COLOR_BGR2RGB)

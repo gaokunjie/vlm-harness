@@ -19,6 +19,17 @@ pytest
 
 需要用户/硬件参与的步骤见 `docs/HANDOFF.md`；当前状态见 `docs/PROGRESS.md`。
 
+## 标定（8×7 / 25 mm ChArUco）
+
+```bash
+python scripts/calibrate_intrinsics.py --camera front --samples 20
+python scripts/calibrate_hand_eye.py --mode wrist --camera wrist --samples 15
+python scripts/calibrate_hand_eye.py --mode fixed --camera front --samples 15
+python scripts/measure_targets.py
+```
+
+详见 `docs/HANDOFF.md` §3。
+
 ## 目录
 
 - `src/dobot_rua/`：几何、运动学、工作空间、感知、硬件、integration、评估
