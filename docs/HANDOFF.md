@@ -13,17 +13,20 @@ uv pip install -e vendor/uni-robot-agent -e ".[dev]"
 pytest                                 # 期望 46 passed
 ```
 
-## 1. DeepSeek 探针
+## 1. DeepSeek 探针（已完成）
 
-实网探针被 Claude Code 的 auto-mode classifier 拦截，需要你运行或授权：
+已跑通：`--n 10` → **10/10 tool call、10/10 图像正确**，延迟 0.72–1.14 s。
+当前环境用 `ANTHROPIC_AUTH_TOKEN` 也能访问 `https://api.deepseek.com/v1`。
+
+复跑命令：
 
 ```bash
-export UNI_ROBOT_AGENT_API_KEY='<deepseek key>'
-.venv/bin/python scripts/probe_deepseek.py --n 1
+export UNI_ROBOT_AGENT_API_KEY='<deepseek key>'   # 或 DEEPSEEK_API_KEY / ANTHROPIC_AUTH_TOKEN
+.venv/bin/python scripts/probe_deepseek.py --n 10
 ```
 
-- 脚本也会回退使用 `DEEPSEEK_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`。
-- 期望：至少 1 次 `tool_calls`，`latencies_s` 有值；失败会打印 HTTP 错误。
+- 脚本会处理 `ALL_PROXY=socks://` 的 httpx 兼容问题；HTTP(S)_PROXY 保留。
+- 期望：`ok_calls=10`、`image_ok=10`、`errors=[]`。
 - 如果 401/403，说明当前 key 不适用于 `https://api.deepseek.com/v1`，需要单独的 DeepSeek API key。
 
 ## 2. 硬件 bring-up（需要机械臂/相机）

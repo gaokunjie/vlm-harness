@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import time
 from dataclasses import dataclass, field
 
@@ -23,6 +24,25 @@ class ProbeReport:
     image_ok: int
     latencies_s: list[float] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+
+def _normalize_proxy_env() -> None:
+    """httpx rejects ``ALL_PROXY=socks://`` (it expects ``socks5://``).
+
+    Keep the HTTP proxy variables intact; only fix or drop the unsupported
+    ALL_PROXY form so a machine with a Clash-style environment can run the
+    probe without a wrapper.
+    """
+    for key in ("ALL_PROXY", "all_proxy"):
+        value = os.environ.get(key)
+        if not value or not value.startswith("socks://"):
+            continue
+        try:
+            import socksio  # noqa: F401
+        except ImportError:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = "socks5://" + value[len("socks://") :]
 
 
 def _synthetic_image() -> str:
@@ -67,6 +87,7 @@ def probe(
     if n <= 0:
         raise ValueError("n must be positive")
 
+    _normalize_proxy_env()
     image_b64 = _synthetic_image()
     endpoint = base_url.rstrip("/") + "/chat/completions"
     payload = {
