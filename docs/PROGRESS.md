@@ -137,6 +137,15 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 已写回 `configs/cameras.yaml` 的 `cameras.front`；去畸变目检通过。
 - 下一步：side/wrist 内参 → wrist 手眼（竖直板）→ front/side fixed 手眼 → `measure_targets` 写 world GT。
 
+## Side 内参标定完成（2026-11-07）
+
+- 采集 **20/20** 视角；可见角点 20–28（板离得近、上缘有裁切）。
+- **RMS = 0.4415 px**。
+- `K = [[1022.7529, 0, 608.1316], [0, 1014.4176, 372.2235], [0, 0, 1]]`
+- `dist = [0.10414, -0.05467, -0.00472, -0.01478, -0.08971]`
+- 已写回 `configs/cameras.yaml` 的 `cameras.side`。
+- 备注：板没有完整进画面，RMS 很好但边缘覆盖有限；side 主要做侧视/深度上下文，若后续三角化在边缘误差大，可让板退远、完整入画后重跑。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。
