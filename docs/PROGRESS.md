@@ -146,6 +146,16 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 已写回 `configs/cameras.yaml` 的 `cameras.side`。
 - 备注：板没有完整进画面，RMS 很好但边缘覆盖有限；side 主要做侧视/深度上下文，若后续三角化在边缘误差大，可让板退远、完整入画后重跑。
 
+## Wrist 内参（provisional，2026-11-07）
+
+- marker 模式 + 正则化（固定 `fx=fy`、零切向、只估 k1/k2、初值焦距 1000）。
+- 采集 20/20 视角，每帧 4–14 个 marker。
+- **RMS = 3.3621 px（偏高）**；但 `fx=fy`、畸变合理，去畸变目检可接受，标为 **provisional**。
+- `K = [[1084.3751, 0, 622.8280], [0, 1084.3751, 388.0682], [0, 0, 1]]`
+- `dist = [0.11656, -0.24292, 0, 0, 0]`
+- 已写回 `configs/cameras.yaml` 的 `cameras.wrist`。
+- 说明：wrist 近景、吸盘遮挡、板局部可见，marker 外角点噪声大；RMS 3.36 说明仍有残差。先用它做 wrist 手眼，若手眼重投影/残差大，再改用 ≥8 marker/更大倾角，或打印更小的板重测。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。
