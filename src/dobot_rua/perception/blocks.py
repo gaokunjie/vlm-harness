@@ -24,6 +24,7 @@ _HSV_RANGES = {
     "red_high": ((170, 80, 60), (180, 255, 255)),
     "blue": ((100, 80, 60), (130, 255, 255)),
     "green": ((40, 80, 60), (85, 255, 255)),
+    "yellow": ((20, 100, 100), (35, 255, 255)),
 }
 
 
@@ -44,7 +45,7 @@ def detect_blocks(
     intrinsic_k: np.ndarray,
     t_world_from_optical: np.ndarray,
     plane_z_m: float,
-    colors: tuple[str, ...] = ("red", "blue"),
+    colors: tuple[str, ...] = ("blue", "yellow"),
 ) -> list[BlockDetection]:
     """Detect filled square blocks with HSV + contours + subpixel moments."""
     detections: list[BlockDetection] = []
@@ -111,6 +112,8 @@ def measure_block_gt(
         mask = ((b > 150) & (g < 80) & (r < 80)).astype(np.uint8) * 255
     elif color == "green":
         mask = ((g > 120) & (r < 100) & (b < 100)).astype(np.uint8) * 255
+    elif color == "yellow":
+        mask = ((r > 150) & (g > 150) & (b < 100)).astype(np.uint8) * 255
     else:
         return None
     count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)

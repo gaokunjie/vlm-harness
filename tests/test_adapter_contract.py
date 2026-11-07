@@ -40,7 +40,7 @@ def _adapter():
         camera_source=FakeCameraSource(),
         config=AdapterConfig(),
         episode_id="trial-1",
-        instruction="Place the red block at the black lines intersection.",
+        instruction="Place the yellow block at the black lines intersection.",
         metadata={"task_id": "line_intersection", "seed": 1},
     )
 
@@ -182,7 +182,7 @@ def test_adapter_rejects_unreachable_pose_when_kinematics_supplied():
             max_step_mm=5000.0,
         ),
         episode_id="trial-2",
-        instruction="Place the red block at the black lines intersection.",
+        instruction="Place the yellow block at the black lines intersection.",
         metadata={},
         fk_params=load_fk("configs/fk_magician.yaml"),
         safety_limits=SafetyLimits.from_yaml("configs/robot_limits.yaml"),

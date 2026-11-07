@@ -3,12 +3,12 @@ import pytest
 from dobot_rua.eval.manifest import Manifest, PlannedTrial, assert_disjoint
 
 
-def _trial(plan_id="p1", split="dev", seed=1, instruction="Place the red block at the black lines intersection."):
+def _trial(plan_id="p1", split="dev", seed=1, instruction="Place the yellow block at the black lines intersection."):
     return PlannedTrial(
         plan_id=plan_id,
         split=split,
         seed=seed,
-        target_block_color="red",
+        target_block_color="yellow",
         target_line_color="black",
         instruction=instruction,
         block_xy_planned_mm=(100.0, 50.0),
@@ -32,7 +32,7 @@ def test_manifest_hash_changes_with_content():
         experiment_id="e1",
         split="dev",
         seed=1,
-        trials=[_trial(instruction="Put the red cube on the black cross.")],
+        trials=[_trial(instruction="Put the yellow cube on the black cross.")],
     )
     assert a.stable_hash() != b.stable_hash()
 

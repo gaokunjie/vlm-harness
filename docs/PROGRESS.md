@@ -5,7 +5,7 @@
 - 上游：uni-robot-agent `f3e0ec0`（v0.1.1）
 - 设计：`../docs/superpowers/specs/2026-11-07-rua-line-intersection-design.md`
 - 计划：`../docs/superpowers/plans/2026-11-07-rua-line-intersection-implementation.md`
-- 当前测试：**71 passed**（`.venv/bin/python -m pytest`）
+- 当前测试：**73 passed**（`.venv/bin/python -m pytest`）
 
 ## 已完成（无需用户/硬件）
 
@@ -110,13 +110,22 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 
 这次只读 bring-up 没有移动机械臂；`RealCameraSource` 已实现 RGB 约定、MJPG fourcc 归一化（`mjpeg→MJPG`）、标定透传和 close 释放。
 
+## 场景同步（2026-11-07）
+
+- 现场块色：**蓝块 + 黄块**（红块已替换为黄块，避免与红线混淆）。
+- 目标：黑线交点 A（已有）+ 红线交点 B（已画）；`configs/targets.yaml` 记录 pixel 坐标，world 待标定。
+- 感知默认块色改为 `("blue","yellow")`；`measure_block_gt` 增加黄色 BGR 阈值。
+- 真实画面里红线偏暗/低饱和、黑线偏暗青；黑/红掩码已放宽（黑 `S,V<120`；红 `H 0–20/160–180, S≥40`），并降低 Hough 阈值。
+- 当前 front 静止位姿下机械臂会压到红线附近；**采集前先把臂移到 survey 位姿**，否则红线检测置信度低。
+- 参考帧：`audit/cameras/scene2_front.png`、`scene2_wrist.png`、`scene2_side.png`（未入库）。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。
 2. **真机标定未做**：front/side eye-to-hand、wrist eye-in-hand（竖直板）、桌面平面、TCP、交点 GT。
 3. ~~DeepSeek 实网探针未跑~~：已跑通，10/10 次 tool call、10/10 次图像正确，延迟 0.72–1.14 s。首跑失败是环境里 `ALL_PROXY=socks://` 的 httpx 兼容问题，已修。
 4. **真机 smoke 未跑**：`server.py` 目前会明确报“hardware wiring pending”，不会假装控制机器人。
-5. **红线交点 B 的位置未测**：需要用户确认可达且 front 相机可见。
+5. **红线交点 B**：已画好；当前 pixel 约 `(600, 275)`，world 坐标待 front 标定后确定；它靠近黄块和机械臂，采集前建议把臂移到 survey 位姿。
 6. **块尺寸/桌面高度**：`configs/task.yaml` 里是占位值（25 mm、z=0），需要实测替换。
 7. **FOV ∩ 可达域的显式合成未接**：`sample_layout` 目前接收一个 `PointMask`；调用方需要先做交集。reviewer 标为 Minor，已记录为 deferred。
 8. **其他 deferred Minor**：`Layout.seed` 是采样后的新 draw（不是复现输入 seed 的 seed）；`min_target_sep_mm` 只对一个交点生效；`build_fov_mask` 平面固定 z=0；`setup_vendor.sh` 不校验已有 vendor 的 commit；probe 回退 `ANTHROPIC_AUTH_TOKEN` 可能 401；ledger 元组读回为 list，`success` 与 rubric 可不一致。

@@ -62,6 +62,28 @@ def test_black_detection_excludes_red_lines():
     assert np.allclose(red.intersection_uv, (250.0, 350.0), atol=5.0)
 
 
+def test_detect_desaturated_red_lines():
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    color = (100, 90, 120)  # low-saturation brown-red, BGR
+    cv2.line(image, (200, 300), (440, 300), color, 3)
+    cv2.line(image, (320, 180), (320, 420), color, 3)
+    K, T = _camera()
+    result = detect_line_intersection(image, K, T, 0.0, "red")
+    assert result is not None
+    assert np.allclose(result.intersection_uv, (320.0, 300.0), atol=6.0)
+
+
+def test_detect_bright_dark_teal_lines():
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    color = (110, 110, 80)  # desaturated dark teal, BGR
+    cv2.line(image, (200, 300), (440, 300), color, 3)
+    cv2.line(image, (320, 180), (320, 420), color, 3)
+    K, T = _camera()
+    result = detect_line_intersection(image, K, T, 0.0, "black")
+    assert result is not None
+    assert np.allclose(result.intersection_uv, (320.0, 300.0), atol=6.0)
+
+
 def test_measure_intersection_gt_does_not_share_the_agent_mask(monkeypatch):
     image = _line_scene((0, 0, 0))
     K, T = _camera()

@@ -31,7 +31,7 @@ def _mock_success(robot: FakeRobot) -> bool:
 
 def _scene() -> np.ndarray:
     image = np.full((480, 640, 3), 255, dtype=np.uint8)
-    cv2.rectangle(image, (300, 220), (340, 260), (0, 0, 255), -1)  # red block
+    cv2.rectangle(image, (300, 220), (340, 260), (0, 255, 255), -1)  # yellow block
     cv2.rectangle(image, (180, 180), (220, 220), (255, 0, 0), -1)  # blue block
     cv2.line(image, (200, 300), (600, 300), (0, 0, 0), 3)
     cv2.line(image, (400, 100), (400, 500), (0, 0, 0), 3)

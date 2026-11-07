@@ -1,16 +1,19 @@
 # Fixed painted-line intersections.
-# GT is measured once with the independent OpenCV pipeline and validated by
-# robot touch / manual annotation before formal evaluation.
+# Pixel coordinates were read from the 1280x720 front frame on 2026-11-07.
+# World XY stays null until the front camera is calibrated; the agent never
+# receives either value. GT is measured with the independent OpenCV pipeline.
 targets:
   black_A:
     line_color: black
+    intersection_px: [710, 350]
     intersection_gt_xy_m: null
-    measured_at: null
+    measured_at: "2026-11-07"
     calibration_hash: null
-    notes: "two black lines already painted on the table"
+    notes: "two black lines painted on the whiteboard; approximate pixel read from scene2_front.png"
   red_B:
     line_color: red
+    intersection_px: [600, 275]
     intersection_gt_xy_m: null
-    measured_at: null
+    measured_at: "2026-11-07"
     calibration_hash: null
-    notes: "two red lines added at a second fixed location"
+    notes: "two red lines added near the upper-left; approximate pixel read from scene2_front.png; partly close to the arm at some poses"

@@ -18,7 +18,7 @@ def test_mock_camera_source_returns_rgb_frames():
 
     frame = MockCameraSource().capture(["front"])["front"]
     # CameraFrame.rgb is RGB (the vendor snapshot store writes it with PIL).
-    assert tuple(int(value) for value in frame.rgb[240, 320]) == (255, 0, 0)
+    assert tuple(int(value) for value in frame.rgb[240, 320]) == (255, 255, 0)
     assert tuple(int(value) for value in frame.rgb[200, 200]) == (0, 0, 255)
 
 

@@ -22,12 +22,14 @@ class LineIntersection:
 def _line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
     if line_color == "black":
-        # Black paint is dark AND unsaturated. A gray threshold alone would
-        # also include saturated red/blue lines whose luminance is low.
-        return cv2.inRange(hsv, np.array((0, 0, 0)), np.array((180, 90, 90)))
+        # Black paint is dark AND unsaturated. Real marker/print lines can sit
+        # around V=110 and S=70 under this camera's white balance, so keep a
+        # moderately wide dark/desaturated band rather than a gray threshold.
+        return cv2.inRange(hsv, np.array((0, 0, 0)), np.array((180, 120, 120)))
     if line_color == "red":
-        low = cv2.inRange(hsv, np.array((0, 80, 50)), np.array((10, 255, 255)))
-        high = cv2.inRange(hsv, np.array((170, 80, 50)), np.array((180, 255, 255)))
+        # Real red marker appears desaturated/brownish; allow S>=40.
+        low = cv2.inRange(hsv, np.array((0, 40, 40)), np.array((20, 255, 255)))
+        high = cv2.inRange(hsv, np.array((160, 40, 40)), np.array((180, 255, 255)))
         return cv2.bitwise_or(low, high)
     if line_color == "blue":
         return cv2.inRange(hsv, np.array((100, 80, 50)), np.array((130, 255, 255)))
@@ -39,10 +41,12 @@ def _line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
 def _gt_line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
     """Independent GT mask using BGR thresholds instead of the agent's HSV path."""
     blue, green, red = cv2.split(image_bgr)
+    maximum = np.maximum(np.maximum(blue, green), red)
+    minimum = np.minimum(np.minimum(blue, green), red)
     if line_color == "black":
-        mask = (blue < 90) & (green < 90) & (red < 90)
+        mask = (maximum < 120) & ((maximum - minimum) < 35)
     elif line_color == "red":
-        mask = (red > 150) & (green < 90) & (blue < 90)
+        mask = (red > 100) & (red > green + 20) & (red > blue + 20)
     elif line_color == "blue":
         mask = (blue > 150) & (green < 90) & (red < 90)
     elif line_color == "green":
@@ -99,7 +103,7 @@ def detect_line_intersection(
     if mask is None:
         return None
     segments = cv2.HoughLinesP(
-        mask, 1, np.pi / 180.0, threshold=30, minLineLength=40, maxLineGap=10
+        mask, 1, np.pi / 180.0, threshold=20, minLineLength=25, maxLineGap=8
     )
     if segments is None:
         return None
@@ -152,6 +156,10 @@ def measure_intersection_gt(
     if mask is None:
         return None
     lines = cv2.HoughLines(mask, 1, np.pi / 180.0, threshold=80)
+    if lines is None:
+        # Weak real-world marker lines need a lower threshold; the synthetic
+        # accuracy path stays on the stricter threshold.
+        lines = cv2.HoughLines(mask, 1, np.pi / 180.0, threshold=50)
     if lines is None:
         return None
     entries = []
