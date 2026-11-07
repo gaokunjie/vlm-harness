@@ -74,7 +74,7 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 
 - 现场块色：蓝块 + 黄块；目标：黑线交点 A + 红线交点 B。
 - 红线交点 B 当前 pixel 约 `(600, 275)`，靠近黄块和机械臂静止位姿；采集前把臂移到 survey 位姿（例如抬高/退开），避免遮挡。
-- 已打印 **ChArUco 8×7 / 25 mm**；默认 marker 18.75 mm，dictionary 默认 `DICT_5X5_1000`，如打印时用了别的字典/尺寸，跑脚本时覆盖参数。
+- 已打印 ChArUco 8×7 / 25 mm；OpenCV 实际检测为 **(7,8)**（板旋转 90°），默认 **`DICT_4X4_50`**、marker 18.75 mm。front 内参已完成（RMS 0.8135 px）；side/wrist 用同样默认参数。
 - wrist 安装角度固定、随臂移动；标定按现状做，不调整相机。
 
 ## 3. 标定

@@ -128,6 +128,15 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 脚本：`scripts/calibrate_intrinsics.py`、`scripts/calibrate_hand_eye.py`（wrist / fixed 两种模式）、`scripts/measure_targets.py`。
 - **实际标定还没跑**：需要你按 HANDOFF §3 摆板/移动机械臂；front/side 的 fixed 模式要求把板刚性固定在末端，wrist 的板固定在竖直支架上。
 
+## Front 内参标定完成（2026-11-07）
+
+- 板：打印 8×7 / 25mm；OpenCV 实际检测为 **(7,8) 方格**（板在画面中旋转 90°），dictionary **`DICT_4X4_50`**，marker 18.75mm。
+- 采集 **20/20** 视角；**RMS = 0.8135 px**。
+- `K = [[1000.9747, 0, 637.2277], [0, 993.6583, 371.6228], [0, 0, 1]]`
+- `dist = [0.16743, -0.24307, 0.00266, -0.0000984, 0.11776]`
+- 已写回 `configs/cameras.yaml` 的 `cameras.front`；去畸变目检通过。
+- 下一步：side/wrist 内参 → wrist 手眼（竖直板）→ front/side fixed 手眼 → `measure_targets` 写 world GT。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。

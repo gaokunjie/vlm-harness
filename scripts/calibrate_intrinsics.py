@@ -25,15 +25,16 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--camera", default="front", help="role in cameras.yaml or a device path")
     p.add_argument("--camera-config", type=Path, default=Path("configs/cameras.yaml"))
     p.add_argument("--output", type=Path, default=Path("configs/cameras.yaml"))
-    p.add_argument("--squares-x", type=int, default=8)
-    p.add_argument("--squares-y", type=int, default=7)
+    p.add_argument("--squares-x", type=int, default=7)
+    p.add_argument("--squares-y", type=int, default=8)
     p.add_argument("--square-mm", type=float, default=25.0)
     p.add_argument("--marker-mm", type=float, default=18.75)
-    p.add_argument("--dictionary", default="DICT_5X5_1000")
+    p.add_argument("--dictionary", default="DICT_4X4_50")
     p.add_argument("--samples", type=int, default=20)
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--no-preview", action="store_true")
+    p.add_argument("--timeout-s", type=float, default=300.0)
     return p
 
 
@@ -62,11 +63,15 @@ def main() -> int:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
 
     detections: list[tuple[np.ndarray, np.ndarray]] = []
+    started = time.time()
     last_mean = None
     last_capture = 0.0
     print("SPACE = capture, q = finish")
     try:
-        while len(detections) < args.samples:
+        while (
+            len(detections) < args.samples
+            and time.time() - started < args.timeout_s
+        ):
             ok, frame = cap.read()
             if not ok:
                 continue
@@ -101,7 +106,11 @@ def main() -> int:
                 print(f"captured {len(detections)}/{args.samples} corners={len(ids)}")
     finally:
         cap.release()
-        cv2.destroyAllWindows()
+        if not args.no_preview:
+            try:
+                cv2.destroyAllWindows()
+            except cv2.error:
+                pass
 
     if len(detections) < 3:
         print("not enough views; need at least 3")
