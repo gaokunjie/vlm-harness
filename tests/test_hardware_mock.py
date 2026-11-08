@@ -67,3 +67,30 @@ def test_dobot_robot_wraps_injected_driver():
     assert state.z_mm == pytest.approx(30.0)
     robot.set_suction(True)
     assert driver.suction is True
+
+
+def test_dobot_close_can_keep_suction_on():
+    from dobot_rua.hardware.dobot import DobotRobot
+
+    class FakeDriver:
+        def __init__(self):
+            self.pose_value = (120.0, 0.0, 20.0, 0.0, 0.0, 10.88, 49.98, 0.0)
+            self.suction = None
+            self.closed = False
+
+        def pose(self):
+            return self.pose_value
+
+        def suck(self, on):
+            self.suction = on
+
+        def close(self):
+            self.closed = True
+
+    driver = FakeDriver()
+    robot = DobotRobot(driver=driver)
+    robot.connect()
+    robot.set_suction(True)
+    robot.close(release=False)
+    assert driver.suction is True
+    assert driver.closed is True

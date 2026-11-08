@@ -16,11 +16,20 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
+from dobot_rua.geometry import mean_pose
+
 
 @dataclass(frozen=True)
 class HandEyeResult:
     transform: np.ndarray
     method: str
+
+
+@dataclass(frozen=True)
+class EyeToHandResult:
+    base_from_camera: np.ndarray
+    tool_from_board: np.ndarray
+    estimates: tuple[np.ndarray, ...]
 
 
 def _pose_from_params(params: np.ndarray) -> np.ndarray:
@@ -100,4 +109,36 @@ def solve_hand_eye(
     return HandEyeResult(
         transform=_pose_from_params(result.x[:6]),
         method=method,
+    )
+
+
+def solve_eye_to_hand(
+    base_poses: list[np.ndarray],
+    camera_from_board_poses: list[np.ndarray],
+) -> EyeToHandResult:
+    """Fixed camera watching a board held by the tool.
+
+    ``base_poses`` are ``T_base_from_tool``, ``camera_from_board_poses`` are
+    ``T_camera_from_board``. ``T_base_from_camera`` is constant through the
+    motion, so ``base @ X @ inv(camera_from_board)`` is constant for the
+    board-in-tool transform ``X``; inverting the targets turns that into the
+    AX = XB system :func:`solve_hand_eye` already solves.
+    """
+    if len(base_poses) != len(camera_from_board_poses):
+        raise ValueError("base and camera pose counts differ")
+    if len(base_poses) < 3:
+        raise ValueError("at least three pose pairs are required")
+    base = [np.asarray(pose, dtype=float) for pose in base_poses]
+    board_from_camera = [
+        np.linalg.inv(np.asarray(pose, dtype=float)) for pose in camera_from_board_poses
+    ]
+    result = solve_hand_eye(base, board_from_camera)
+    estimates = tuple(
+        base_pose @ result.transform @ board_pose
+        for base_pose, board_pose in zip(base, board_from_camera, strict=True)
+    )
+    return EyeToHandResult(
+        base_from_camera=mean_pose(estimates),
+        tool_from_board=result.transform,
+        estimates=estimates,
     )

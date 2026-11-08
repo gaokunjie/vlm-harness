@@ -221,3 +221,27 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 ## 下一步（需要用户参与）
 
 按 `docs/HANDOFF.md` 的顺序做硬件 bring-up、标定、GT 验证、真机 smoke；然后接感知 handler，跑 pilot，冻结 rubric，进入正式 DOE。
+
+## Front 固定相机 eye-to-hand：找到三个真因（2026-11-08）
+
+用吸盘夹住贴了纸板的小板，在 front 相机下扫位姿求解 `T_world_from_optical`。连续几次 spread 都超阈值，逐层定位到三个独立问题：
+
+1. **求解模型用反了**：`solve_hand_eye` 求解的是 `T_base_tool @ X @ T_cam_board = const`（eye-in-hand：相机随工具动）。固定相机 + 板在工具上时，
+   实际约束是 `T_base_tool @ T_tool_board @ inv(T_cam_board) = T_base_camera = const`。
+   已加 `solve_eye_to_hand()`（把 target 取逆后复用 AX=XB，再对每个位姿的估计取弦均值）。单测覆盖已知真值恢复与 spread。
+2. **工具姿态模型错了**：之前用 `r` 单独构造姿态。实测机器人 `pose()` 的 `r` 是**世界系工具 yaw**，控制器内部令 `j4 = r - j1`
+   （数据：pose3。j1=+5.41, j4=−5.41, r=0）。三轴系必须按 `j1/j2/j3` 求，j4 只是绕工具轴的 spin；脚本现在同时试
+   `fk_j4plus / fk_j4minus / world_yaw` 三种模型，用 spread 选最优并记录所选模型。
+3. **读位姿在运动中读到中途值**：Dobot 在 speed=20 时约 6 mm/s，60 mm 的扫位姿移动要 10 s；`move_pose` 默认 5 s 超时、
+   稳定判据在慢速运动时永不满足，于是 7 s 后带着"还在动"的位姿返回，记录的状态与图像不对应。已改为 25 s 超时、
+   到位残差 >3 mm 或拍摄前后位姿漂移 >0.6 mm 的样本直接丢弃。
+
+另外：AX=XB 的平移项在旋转激励太小时病态（±15 mm 的盒子只有几度旋转，解出的 `T_tool_from_board` 平移可到 0.38 m）。
+扫位姿改成 y ±60 mm（j1 ±21°）、x ±30 mm、z ±20 mm、r ±30°，并把完整观测 dump 到 `audit/eye_to_hand_last.json` 供离线复解。
+
+**当前阻塞（物理）**：最新一次扫描中板在画面里几乎不动（24 个位姿的板位姿平移变化 <1 mm），说明真空中途掉了；
+随后的抓取测试（开吸盘 + 抬 30 mm）板只动了 1.8 mm，前视相机显示吸盘并不在纸板上方，板平放在白板上。
+纸板是多孔材料、吸盘越吸越漏，长扫描尤其容易掉。需要：① 把吸盘对准并接触纸板后再开真空；
+② 用**非多孔刚性板**（亚克力/塑料/覆膜）代替纸板，或把板直接贴在末端法兰上。
+
+脚本已加 `--grasp`（开真空、结束时保真空）、`--dump`、到位/漂移校验；本轮代码改动见下一条 commit。

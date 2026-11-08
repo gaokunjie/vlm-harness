@@ -27,14 +27,17 @@ class DobotRobot:
             raise RuntimeError("robot is not connected")
         self._driver.speed(int(velocity), int(acceleration))
 
-    def close(self) -> None:
+    def close(self, release: bool = True) -> None:
+        """Close the driver; ``release=False`` leaves the vacuum state as-is."""
         if self._driver is not None:
             try:
-                self._driver.suck(False)
+                if release:
+                    self._driver.suck(False)
             finally:
                 self._driver.close()
                 self._driver = None
-        self._suction_on = False
+        if release:
+            self._suction_on = False
 
     def read_state(self) -> RobotState:
         if self._driver is None:

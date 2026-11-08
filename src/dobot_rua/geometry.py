@@ -21,6 +21,20 @@ def pose_to_matrix(position: Point, quaternion_wxyz: QuaternionWXYZ) -> np.ndarr
     return transform
 
 
+def mean_pose(transforms: Sequence[np.ndarray]) -> np.ndarray:
+    """Average 4x4 transforms; rotations use the chordal mean on SO(3)."""
+    matrices = [np.asarray(transform, dtype=float) for transform in transforms]
+    if not matrices:
+        raise ValueError("at least one transform is required")
+    if any(matrix.shape != (4, 4) for matrix in matrices):
+        raise ValueError("every transform must be 4x4")
+    rotations = Rotation.from_matrix([matrix[:3, :3] for matrix in matrices])
+    result = np.eye(4, dtype=float)
+    result[:3, :3] = rotations.mean().as_matrix()
+    result[:3, 3] = np.mean([matrix[:3, 3] for matrix in matrices], axis=0)
+    return result
+
+
 def matrix_to_pose(
     transform: np.ndarray,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:

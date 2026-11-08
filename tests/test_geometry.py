@@ -67,3 +67,28 @@ def test_pixel_behind_camera_is_rejected():
     K, T = _downward_camera()
     with pytest.raises(ValueError):
         project_point_to_pixel(K, T, np.array([0.0, 0.0, 2.0]))
+
+
+def test_mean_pose_averages_noisy_transforms():
+    from scipy.spatial.transform import Rotation
+
+    from dobot_rua.geometry import mean_pose
+
+    truth = np.eye(4)
+    truth[:3, :3] = Rotation.from_euler("zyx", [12.0, -5.0, 30.0], degrees=True).as_matrix()
+    truth[:3, 3] = [0.31, -0.12, 0.08]
+    rng = np.random.default_rng(7)
+    samples = []
+    for _ in range(25):
+        noise = np.eye(4)
+        noise[:3, :3] = Rotation.from_rotvec(
+            rng.normal(scale=0.004, size=3)
+        ).as_matrix()
+        noise[:3, 3] = rng.normal(scale=0.001, size=3)
+        samples.append(truth @ noise)
+    estimate = mean_pose(samples)
+    assert np.allclose(estimate[:3, 3], truth[:3, 3], atol=3e-3)
+    angle = np.degrees(
+        Rotation.from_matrix(estimate[:3, :3] @ truth[:3, :3].T).magnitude()
+    )
+    assert angle < 0.5
