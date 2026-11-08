@@ -42,6 +42,12 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--board-preset", choices=("wrist", "large"), default="wrist")
     p.add_argument("--marker", type=int, help="marker id touched (record)")
     p.add_argument("--board-z-mm", type=float, default=1.0)
+    p.add_argument(
+        "--prefer",
+        choices=("far", "arm"),
+        default="far",
+        help="pick the two targets farthest apart, or nearest the robot side",
+    )
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     return p
@@ -120,12 +126,21 @@ def prepare(args) -> int:
                 pixels[marker_id] = np.asarray(corner_set).reshape(4, 2).mean(axis=0)
                 break
 
-    # two touch targets: the most separated pair of detected markers
     ordered = sorted(pixels)
-    target = max(
-        ((a, b) for i, a in enumerate(ordered) for b in ordered[i + 1 :]),
-        key=lambda pair: float(np.linalg.norm(pixels[pair[0]] - pixels[pair[1]])),
-    )
+    if args.prefer == "far":
+        target = max(
+            ((a, b) for i, a in enumerate(ordered) for b in ordered[i + 1 :]),
+            key=lambda pair: float(np.linalg.norm(pixels[pair[0]] - pixels[pair[1]])),
+        )
+    else:
+        # the robot base sits at the right edge of the image, so the markers
+        # with the largest u are the ones closest to (and reachable by) the arm
+        ranked = sorted(ordered, key=lambda m: pixels[m][0], reverse=True)
+        candidates = ranked[: max(3, len(ranked) * 7 // 20)]
+        target = max(
+            ((a, b) for i, a in enumerate(candidates) for b in candidates[i + 1 :]),
+            key=lambda pair: float(np.linalg.norm(pixels[pair[0]] - pixels[pair[1]])),
+        )
 
     debug = frame.copy()
     for index, marker_id in enumerate(ordered, start=1):
