@@ -84,6 +84,18 @@ wrist 之前用大板得到 provisional 内参（RMS 3.36 px），请用小板�
 
 ## 3. 标定
 
+### 3.0 front/side 外参：触碰法（推荐）
+
+```bash
+python scripts/calibrate_cameras_touch.py --cameras front,side
+```
+
+1. 把 **7×8/25mm 大板**平放并固定在桌面；
+2. 机械臂移到 survey 位姿（不挡板），回车；脚本拍 front/side 并保存 `audit/touch/*_board_ids.png`；
+3. 按提示把吸盘尖依次点到 4 个角 marker 中心，每个点完回车；
+4. 脚本拟合 `T_base_board`，写 front/side 的 `T_world_from_optical`。
+
+
 ### 3.1 front / side：eye-to-hand
 
 - 棋盘格内参；固定外参到机器人基座。

@@ -197,6 +197,16 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 运行时 `DobotAdapter.capture` 用三轴系 + `T_tool_from_optical` 合成 wrist 外参；wrist 现在 `has_calibration=true`。
 - 若需要更紧的旋转精度：换大板或加更大三轴运动范围重跑；当前精度对近景/附着确认够用。
 
+## Front/side 触碰标定脚本（2026-11-08）
+
+- `src/dobot_rua/calibration/touch.py`：Kabsch 求 `T_base_from_board`、`T_base_camera = T_base_board @ inv(T_cam_board)`、marker 中心、四角 marker ID、marker-based `T_cam_board`。
+- `scripts/calibrate_cameras_touch.py`：大板平放桌面；机械臂移到 survey 位姿；front/side 拍板；提示触碰 4 个角 marker 中心；读机械臂位姿；拟合板位姿；写 front/side 的 `T_world_from_optical`。
+- 用法：
+  ```bash
+  python scripts/calibrate_cameras_touch.py --cameras front,side
+  ```
+- 测试：`tests/test_touch.py` 3 passed（Kabsch 恢复、外参组合、四角 marker 选择）。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。
