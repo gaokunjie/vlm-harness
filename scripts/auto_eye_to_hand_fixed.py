@@ -25,7 +25,7 @@ from scipy.spatial.transform import Rotation
 
 from dobot_rua.calibration.charuco import make_board
 from dobot_rua.calibration.hand_eye import solve_eye_to_hand
-from dobot_rua.calibration.touch import camera_board_pose
+from dobot_rua.calibration.touch import camera_board_pose, reprojection_rms
 from dobot_rua.hardware.dobot import DobotRobot
 from dobot_rua.hardware.safety import SafetyLimits
 from dobot_rua.kinematics import inverse_kinematics, load_fk, three_axis_frame
@@ -59,17 +59,16 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-MODELS = ("fk_j4plus", "fk_j4minus", "world_yaw")
+MODELS = ("fk_three_axis", "world_yaw")
 
 
 def tool_frame(params, state, model: str) -> np.ndarray:
     """End-effector frame for one candidate rotation model.
 
-    ``fk_j4plus`` / ``fk_j4minus``: the FK three-axis frame composed with the
-    j4 spin about the tool axis (which direction j4 turns is a mechanical
-    convention, so both signs are tried). ``world_yaw``: the controller's
-    reported ``r`` is the tool yaw about the world vertical, composed with the
-    FK pitch.
+    The task never uses j4 and the board sits on the three-axis body, so the
+    primary model is the FK three-axis frame with j4 held at zero.
+    ``world_yaw`` is a cross-check: the controller's reported ``r`` treated as
+    the tool yaw about the world vertical, composed with the FK pitch.
     """
     frame = three_axis_frame(
         params,
@@ -80,55 +79,50 @@ def tool_frame(params, state, model: str) -> np.ndarray:
         state.y_mm,
         state.z_mm,
     )
-    if model == "world_yaw":
-        pitch = -(
-            float(state.j2_deg) + params.c2_deg + float(state.j3_deg) + params.c3_deg
-        )
-        rotation = Rotation.from_euler(
-            "z", float(state.r_deg), degrees=True
-        ) * Rotation.from_euler("y", pitch, degrees=True)
-        result = np.eye(4)
-        result[:3, :3] = rotation.as_matrix()
-        result[:3, 3] = frame[:3, 3]
-        return result
-    spin_deg = float(state.r_deg) if model == "fk_j4plus" else -float(state.r_deg)
-    spin = np.eye(4)
-    spin[:3, :3] = Rotation.from_euler("z", spin_deg, degrees=True).as_matrix()
-    return frame @ spin
+    if model == "fk_three_axis":
+        return frame
+    pitch = -(
+        float(state.j2_deg) + params.c2_deg + float(state.j3_deg) + params.c3_deg
+    )
+    rotation = Rotation.from_euler(
+        "z", float(state.r_deg), degrees=True
+    ) * Rotation.from_euler("y", pitch, degrees=True)
+    result = np.eye(4)
+    result[:3, :3] = rotation.as_matrix()
+    result[:3, 3] = frame[:3, 3]
+    return result
 
 
 def _offsets() -> list[tuple[float, float, float, float]]:
-    # Relative to the raised pose. Large yaw (dy) and pitch (dz, dx) changes
-    # are what make the AX = XB translation well-conditioned; a +/-15 mm box
-    # only rotates the tool by a few degrees and the solve blows up.
+    # Relative to the raised pose; r stays 0 because the task never uses j4
+    # and the board is fixed to the three-axis body. Yaw (dy) and pitch
+    # (dz, dx) changes supply the rotation excitation for AX = XB.
     return [
         (0, 0, 0, 0),
         (0, 30, 0, 0),
         (0, 60, 0, 0),
-        (-30, 60, 0, 0),
-        (-30, 30, 0, 0),
-        (-30, 0, 0, 0),
-        (-30, -30, 0, 0),
-        (-30, -60, 0, 0),
-        (0, -60, 0, 0),
         (0, -30, 0, 0),
-        (30, -30, 0, 0),
+        (0, -60, 0, 0),
+        (-30, 0, 0, 0),
         (30, 0, 0, 0),
+        (-30, 30, 0, 0),
+        (-30, -30, 0, 0),
         (30, 30, 0, 0),
+        (30, -30, 0, 0),
+        (-30, 60, 0, 0),
+        (-30, -60, 0, 0),
         (30, 60, 0, 0),
-        (30, 60, 20, 0),
+        (30, -60, 0, 0),
+        (0, 0, 10, 0),
         (0, 0, 20, 0),
-        (-30, 0, 20, 0),
-        (30, 0, 20, 0),
+        (0, 30, 10, 0),
+        (0, -30, 10, 0),
         (0, 30, 20, 0),
         (0, -30, 20, 0),
-        (0, 0, -20, 0),
-        (0, 30, -20, 0),
-        (0, -30, -20, 0),
-        (0, 0, 20, 30),
-        (0, 0, 20, -30),
-        (0, 30, 0, 30),
-        (0, -30, 0, -30),
+        (-30, 0, 10, 0),
+        (30, 0, 10, 0),
+        (-30, 0, 20, 0),
+        (30, 0, 20, 0),
     ]
 
 
@@ -169,7 +163,14 @@ def main() -> int:
         squares_x, squares_y, square_mm, marker_mm = 7, 8, 25.0, 18.75
     board = make_board(squares_x, squares_y, square_mm, marker_mm, args.dictionary)
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, args.dictionary))
-    detector = cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
+    parameters = cv2.aruco.DetectorParameters()
+    # The board is small and close to the lens; wider adaptive-threshold
+    # windows recover roughly twice as many markers as the defaults.
+    parameters.adaptiveThreshWinSizeMin = 11
+    parameters.adaptiveThreshWinSizeMax = 35
+    parameters.adaptiveThreshWinSizeStep = 8
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    detector = cv2.aruco.ArucoDetector(dictionary, parameters)
 
     robot = DobotRobot(port=args.robot_port)
     robot.connect()
@@ -190,7 +191,7 @@ def main() -> int:
             corners, ids, _ = detector.detectMarkers(
                 cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             )
-            if ids is None or len(ids) < 4:
+            if ids is None or len(ids) < 6:
                 problems.append(f"{role}: held board not detected; adjust the pose")
                 continue
             pose = camera_board_pose(board, corners, ids, intrinsic, distortion)
@@ -291,14 +292,21 @@ def main() -> int:
                 corners, ids, _ = detector.detectMarkers(
                     cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 )
-                if ids is None or len(ids) < 4:
+                if ids is None or len(ids) < 6:
                     visible = False
                     break
                 pose = camera_board_pose(board, corners, ids, intrinsic, distortion)
                 if pose is None:
                     visible = False
                     break
-                row["cameras"][role] = (pose, len(ids))  # type: ignore[index]
+                rms = reprojection_rms(
+                    board, corners, ids, pose, intrinsic, distortion
+                )
+                if rms is None or rms > 2.0:
+                    print(f"  {role}: reprojection {rms} px too high; skipping")
+                    visible = False
+                    break
+                row["cameras"][role] = (pose, len(ids), rms)  # type: ignore[index]
             if not visible:
                 print("  board lost; returning to raised pose")
                 robot.move_pose(*raised, timeout_s=25.0)

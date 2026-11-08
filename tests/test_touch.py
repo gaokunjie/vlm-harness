@@ -44,3 +44,32 @@ def test_extreme_marker_ids_are_four_distinct_corners():
     assert len(set(ids)) == 4
     centers = np.asarray([marker_center(board, value) for value in ids])
     assert len({tuple(np.round(center[:2], 6)) for center in centers}) == 4
+
+
+def test_reprojection_rms_is_zero_for_exact_pose():
+    import cv2
+
+    from dobot_rua.calibration.touch import reprojection_rms
+
+    board = make_board(5, 5, 10.0, 7.5, "DICT_4X4_50")
+    intrinsic = np.array([[800.0, 0.0, 640.0], [0.0, 800.0, 360.0], [0.0, 0.0, 1.0]])
+    distortion = np.zeros(5)
+    pose = np.eye(4)
+    pose[:3, :3] = Rotation.from_euler("xyz", [160.0, 3.0, 12.0], degrees=True).as_matrix()
+    pose[:3, 3] = [0.02, -0.01, 0.31]
+    rvec, _ = cv2.Rodrigues(pose[:3, :3])
+    ids = np.asarray(board.getIds()).reshape(-1)
+    points = board.getObjPoints()
+    corners = []
+    for index in range(len(ids)):
+        projected, _ = cv2.projectPoints(
+            np.asarray(points[index], dtype=np.float64),
+            rvec,
+            pose[:3, 3],
+            intrinsic,
+            distortion,
+        )
+        corners.append(projected.reshape(1, 4, 2))
+    rms = reprojection_rms(board, corners, ids, pose, intrinsic, distortion)
+    assert rms is not None
+    assert rms < 1e-6

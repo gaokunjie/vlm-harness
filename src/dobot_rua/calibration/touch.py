@@ -86,6 +86,43 @@ def extreme_marker_ids(
     return tuple(selected[:count])
 
 
+def reprojection_rms(
+    board: cv2.aruco.CharucoBoard,
+    corners,
+    ids,
+    pose: np.ndarray,
+    intrinsic: np.ndarray,
+    distortion: np.ndarray,
+) -> float | None:
+    """RMS marker-corner reprojection error (px) for a board pose."""
+    board_ids = np.asarray(board.getIds()).reshape(-1)
+    points = board.getObjPoints()
+    index = {int(value): position for position, value in enumerate(board_ids)}
+    object_points = []
+    image_points = []
+    for corner_set, marker_id in zip(corners, np.asarray(ids).reshape(-1), strict=True):
+        position = index.get(int(marker_id))
+        if position is None:
+            continue
+        object_points.append(np.asarray(points[position], dtype=np.float64))
+        image_points.append(np.asarray(corner_set).reshape(4, 2))
+    if not object_points:
+        return None
+    transform = np.asarray(pose, dtype=float)
+    rvec, _ = cv2.Rodrigues(transform[:3, :3])
+    projected, _ = cv2.projectPoints(
+        np.concatenate(object_points, axis=0),
+        rvec,
+        transform[:3, 3],
+        np.asarray(intrinsic, dtype=float),
+        np.asarray(distortion, dtype=float),
+    )
+    error = np.linalg.norm(
+        projected.reshape(-1, 2) - np.concatenate(image_points, axis=0), axis=1
+    )
+    return float(np.sqrt(np.mean(error**2)))
+
+
 def camera_board_pose(
     board: cv2.aruco.CharucoBoard,
     corners,
