@@ -180,6 +180,14 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 结论：**数据本身不一致**（板位姿 vs 机械臂位姿），不是运动/求解器问题。最可能：打印小板被缩放（实际方格不是 10 mm），或 wrist K 不可靠，或板未刚性固定。
 - **暂停自动手眼**。需要测量：10 mm 比例尺实际长度、板外框宽度（应为 50 mm）、板到镜头距离。
 
+## Wrist 手眼：对焦已修，4 轴臂自由度不足（2026-11-08）
+
+- 自动对焦本来关闭（auto=0），但原 `focus_absolute=450` 对当前板明显虚；扫描最佳 **350**（lapvar 225 vs 450 时 35.5）。
+- 固定 350 后自标定 K：**RMS 0.915 px**，`fx=fy=1191.4`，主点 622.8/388.1，k1=0.215/k2=-0.449；已保存。
+- 手眼仍被拒绝：平移 ~1.7e5、spread 18.3 mm/5.4°。
+- 根因：4 轴臂 + 竖直吸盘，wrist 相机只随 j4 **yaw**；AX=XB 缺第二个旋转轴，full 6D 相机→工具外参不可观测（与 VLA `probe_wrist_camera_mount.py` 的结论一致）。
+- 下一步：A) 量相机安装几何，固定不可观测自由度；B) 跳过 wrist metric 外参，front/side 用触碰法标外参，wrist 只做近景/附着确认。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。

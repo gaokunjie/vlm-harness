@@ -2,15 +2,19 @@
 """Automatic wrist eye-in-hand calibration with small, supervised motions.
 
 The ChArUco board must be fixed in the world in front of the wrist. The script
-first raises the arm to a safe z, then samples a small box around that raised
-pose (x/y +/-10 mm, z 0/-10 mm relative, yaw +/-10 deg). It returns to the
-raised pose after every sample and always returns to the original pose at the
+locks manual focus, raises the arm to a safe z, samples a small box around that
+raised pose (x/y +/-10 mm, z 0/-10 mm relative, yaw +/-10 deg), returns to the
+raised pose after every sample, and always returns to the original pose at the
 end. It aborts before any motion if the board is not visible.
+
+It also self-calibrates the wrist intrinsics from the same fixed-board views
+before solving AX=XB, so the K matches the focus used during the run.
 """
 
 from __future__ import annotations
 
 import argparse
+import subprocess
 import time
 from pathlib import Path
 
@@ -21,6 +25,7 @@ from scipy.spatial.transform import Rotation
 
 from dobot_rua.calibration.charuco import make_board
 from dobot_rua.calibration.hand_eye import solve_hand_eye
+from dobot_rua.calibration.intrinsics import calibrate_from_marker_detections
 from dobot_rua.geometry import pose_to_matrix
 from dobot_rua.hardware.dobot import DobotRobot
 from dobot_rua.hardware.safety import SafetyLimits
@@ -34,6 +39,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="/dev/video0")
     p.add_argument("--samples", type=int, default=15)
     p.add_argument("--speed", type=int, default=20)
+    p.add_argument("--focus", type=int, default=350)
     p.add_argument("--raised-z-mm", type=float, default=20.0)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--width", type=int, default=1280)
@@ -84,16 +90,20 @@ def _capture(cap: cv2.VideoCapture) -> np.ndarray | None:
     return frame
 
 
-def _detect(
-    board,
-    detector,
-    frame: np.ndarray,
-    intrinsic: np.ndarray,
-    distortion: np.ndarray,
-) -> tuple[np.ndarray, int] | None:
+def _detect_markers(detector, frame: np.ndarray):
     corners, ids, _ = detector.detectMarkers(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
     if ids is None or len(ids) < 3:
         return None
+    return corners, ids
+
+
+def _board_pose(
+    board,
+    corners,
+    ids,
+    intrinsic: np.ndarray,
+    distortion: np.ndarray,
+) -> tuple[np.ndarray, int] | None:
     board_ids = np.asarray(board.getIds()).reshape(-1)
     board_points = board.getObjPoints()
     index = {int(marker_id): i for i, marker_id in enumerate(board_ids)}
@@ -131,6 +141,23 @@ def _detect(
     return transform, len(object_points) // 4
 
 
+def _detect(
+    board,
+    detector,
+    frame: np.ndarray,
+    intrinsic: np.ndarray,
+    distortion: np.ndarray,
+):
+    markers = _detect_markers(detector, frame)
+    if markers is None:
+        return None
+    corners, ids = markers
+    pose = _board_pose(board, corners, ids, intrinsic, distortion)
+    if pose is None:
+        return None
+    return pose[0], pose[1], corners, ids
+
+
 def main() -> int:
     args = parser().parse_args()
     config = yaml.safe_load(args.camera_config.read_text(encoding="utf-8"))
@@ -164,6 +191,18 @@ def main() -> int:
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+    subprocess.run(
+        [
+            "v4l2-ctl",
+            "-d",
+            args.device,
+            "-c",
+            "focus_automatic_continuous=0",
+            f"focus_absolute={args.focus}",
+        ],
+        check=False,
+        capture_output=True,
+    )
     frame = _capture(cap)
     initial = None if frame is None else _detect(
         board, detector, frame, intrinsic, distortion
@@ -199,7 +238,7 @@ def main() -> int:
 
     robot.set_speed(args.speed, args.speed)
     gripper_poses: list[np.ndarray] = []
-    target_poses: list[np.ndarray] = []
+    detections: list[tuple[np.ndarray, np.ndarray]] = []
     current = start
     try:
         print("raising to safe z...")
@@ -232,14 +271,14 @@ def main() -> int:
                 current = robot.read_state()
                 time.sleep(0.5)
                 continue
-            camera_from_board, markers = detected
+            camera_from_board, markers, corners, ids = detected
             state = robot.read_state()
             base_from_tool = pose_to_matrix(
                 (state.x_mm / 1000.0, state.y_mm / 1000.0, state.z_mm / 1000.0),
                 tool_quaternion(state.r_deg),
             )
             gripper_poses.append(base_from_tool)
-            target_poses.append(camera_from_board)
+            detections.append((corners, ids))
             print(
                 f"  accepted markers={markers} "
                 f"pose=({state.x_mm:.1f},{state.y_mm:.1f},{state.z_mm:.1f},{state.r_deg:.1f})"
@@ -260,11 +299,39 @@ def main() -> int:
     if len(gripper_poses) < 3:
         print("not enough valid samples")
         return 1
-    result = solve_hand_eye(gripper_poses, target_poses)
+
+    # Self-calibrate K at the locked focus from the same fixed-board views.
+    new_k = calibrate_from_marker_detections(
+        board,
+        detections,
+        (args.height, args.width),
+        initial_K=intrinsic,
+        fix_aspect=True,
+        zero_tangent=True,
+        fix_k3=True,
+        fix_principal=True,
+    )
+    print(f"self-cal K RMS={new_k.rms:.4f}px")
+    print("K=\n", np.array2string(new_k.intrinsic_K, precision=4))
+    print("dist=", new_k.distortion)
+
+    target_poses: list[np.ndarray] = []
+    used_gripper: list[np.ndarray] = []
+    for base_from_tool, (corners, ids) in zip(gripper_poses, detections, strict=True):
+        pose = _board_pose(board, corners, ids, new_k.intrinsic_K, new_k.distortion)
+        if pose is None:
+            continue
+        target_poses.append(pose[0])
+        used_gripper.append(base_from_tool)
+    if len(target_poses) < 3:
+        print("not enough valid board poses with the self-calibrated K")
+        return 1
+
+    result = solve_hand_eye(used_gripper, target_poses)
     transform = result.transform
     estimates = [
         base @ transform @ camera
-        for base, camera in zip(gripper_poses, target_poses, strict=True)
+        for base, camera in zip(used_gripper, target_poses, strict=True)
     ]
     translations = np.array([estimate[:3, 3] for estimate in estimates])
     rotations = np.array(
@@ -274,15 +341,37 @@ def main() -> int:
     rotation_spread = float(np.degrees(np.linalg.norm(np.std(rotations, axis=0))))
     print("T_tool_from_optical=\n", np.array2string(transform, precision=6))
     print(f"board spread: translation std {translation_spread:.2f} mm, rotation std {rotation_spread:.2f} deg")
+
+    # Save the K at the locked focus even if the hand-eye result is weak; it is
+    # still the correct intrinsics for this focus.
+    wrist["intrinsic_K"] = new_k.intrinsic_K.tolist()
+    wrist["distortion"] = new_k.distortion.tolist()
+    wrist["image_size"] = [args.height, args.width]
+    wrist["calibration_date"] = time.strftime("%Y-%m-%d")
+    wrist["calibration_mode"] = "marker_selfcal_focus"
+    wrist["focus_absolute"] = args.focus
+    wrist["focus_automatic_continuous"] = 0
+    wrist["calibration_note"] = (
+        f"self-calibrated at focus {args.focus}; K RMS {new_k.rms:.3f}px"
+    )
+
     if not np.isfinite(transform).all() or np.linalg.norm(transform[:3, 3]) > 1.0:
-        print("hand-eye translation is not physically plausible; not saving")
+        print("hand-eye translation is not physically plausible; K saved, T_tool not saved")
+        args.camera_config.write_text(
+            yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
         return 1
     if translation_spread > 15.0 or rotation_spread > 2.5:
-        print("board spread is too large; not saving a weak hand-eye result")
+        print("board spread is too large; K saved, T_tool not saved")
+        args.camera_config.write_text(
+            yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
         return 1
     wrist["T_tool_from_optical"] = transform.tolist()
     wrist["hand_eye_date"] = time.strftime("%Y-%m-%d")
-    wrist["hand_eye_mode"] = "auto_wrist"
+    wrist["hand_eye_mode"] = "auto_wrist_selfcal"
     args.camera_config.write_text(
         yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
