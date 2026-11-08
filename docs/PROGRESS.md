@@ -188,6 +188,15 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 根因：4 轴臂 + 竖直吸盘，wrist 相机只随 j4 **yaw**；AX=XB 缺第二个旋转轴，full 6D 相机→工具外参不可观测（与 VLA `probe_wrist_camera_mount.py` 的结论一致）。
 - 下一步：A) 量相机安装几何，固定不可观测自由度；B) 跳过 wrist metric 外参，front/side 用触碰法标外参，wrist 只做近景/附着确认。
 
+## Wrist 三轴系手眼：成功（provisional，2026-11-08）
+
+- 正确建模：wrist 相机刚性挂在**三轴部分**，不随 j4 转；手眼目标系用 `three_axis_frame(j1,j2,j3)`，j4 固定 0。
+- self-cal K（focus 350）：**RMS 0.854 px**，`fx=fy=1168.1`，主点 622.8/388.1，k1=0.207/k2=-0.445。
+- `T_tool_from_optical` 平移 **0.121/-0.043/-0.030 m（模长 0.129 m）**，合理。
+- board spread：translation **7.06 mm**，rotation **4.94°**；旋转略高于原 2.5° 严格阈值（小板 marker 旋转噪声），按 **provisional** 保存，阈值放宽到 5°。
+- 运行时 `DobotAdapter.capture` 用三轴系 + `T_tool_from_optical` 合成 wrist 外参；wrist 现在 `has_calibration=true`。
+- 若需要更紧的旋转精度：换大板或加更大三轴运动范围重跑；当前精度对近景/附着确认够用。
+
 ## 已知边界 / 未完成
 
 1. **感知工具 handler 还是 stub**：`list_objects` 等已注册、schema 可加载，但还没有接到环境服务的 snapshot/artifact 读取。下一步在真机 adapter 落地时接线。

@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 from ..hardware.interface import RobotInterface, RobotState
 from ..hardware.safety import SafetyError, SafetyLimits
 from ..geometry import pose_to_matrix
-from ..kinematics import FKParams, inverse_kinematics
+from ..kinematics import FKParams, inverse_kinematics, three_axis_frame
 
 from uni_robot_agent.services.environment.contracts import (
     ArmCommand,
@@ -289,10 +289,23 @@ class DobotAdapter:
         self, cameras: list[str] | None = None, *, high_resolution: bool = False
     ) -> CapturedObservation:
         robot = self.robot.read_state()
-        tool_pose = pose_to_matrix(
-            (robot.x_mm / 1000.0, robot.y_mm / 1000.0, robot.z_mm / 1000.0),
-            _tool_quaternion(robot.r_deg),
-        )
+        if self.fk_params is not None:
+            # The wrist camera is rigidly mounted on the three-axis part of the
+            # arm; j4 does not rotate it.
+            tool_pose = three_axis_frame(
+                self.fk_params,
+                robot.j1_deg,
+                robot.j2_deg,
+                robot.j3_deg,
+                robot.x_mm,
+                robot.y_mm,
+                robot.z_mm,
+            )
+        else:
+            tool_pose = pose_to_matrix(
+                (robot.x_mm / 1000.0, robot.y_mm / 1000.0, robot.z_mm / 1000.0),
+                _tool_quaternion(robot.r_deg),
+            )
         frames = self.camera_source.capture(cameras, tool_pose=tool_pose)
         return CapturedObservation(
             episode_id=self.episode_id,

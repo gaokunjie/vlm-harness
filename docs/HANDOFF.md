@@ -92,7 +92,7 @@ wrist 之前用大板得到 provisional 内参（RMS 3.36 px），请用小板�
 
 ### 3.2 wrist：eye-in-hand（竖直 ChArUco 板）
 
-> 2026-11-08 结论：对焦已锁 350（原 450 虚），self-cal K RMS 0.915；但 full 6D 手眼被 **yaw-only 4 轴臂**卡住（spread 18 mm/5.4°）。需要量相机安装几何固定不可观测自由度，或跳过 wrist 外参、用 front/side 触碰法。
+> 2026-11-08 更新：wrist 相机实际不随 j4 转；改用**三轴系**（j1/j2/j3，j4 固定）后手眼成功（provisional）：T 平移 0.129 m、spread 7 mm/4.94°、K RMS 0.854。若需更紧旋转精度再换大板重跑。
 
 > 2026-11-07：第一次自动手眼失败——`pydobot.move_to` 默认 `wait=False`，位姿读数滞后；已修复为队列+位姿双等待，并加了手眼结果合理性拒绝。重跑：
 > `python scripts/auto_hand_eye_wrist.py --samples 15`

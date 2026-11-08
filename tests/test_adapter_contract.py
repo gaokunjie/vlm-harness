@@ -214,3 +214,21 @@ def test_adapter_rejects_unreachable_pose_when_kinematics_supplied():
     )
     with pytest.raises(RequestRejected):
         adapter.step_pose(command)
+
+
+def test_capture_uses_three_axis_frame_when_fk_supplied():
+    from dobot_rua.kinematics import load_fk
+
+    source = FakeCameraSource()
+    adapter = DobotAdapter(
+        robot=FakeRobot(),
+        camera_source=source,
+        config=AdapterConfig(),
+        episode_id="trial-three-axis",
+        instruction="test",
+        metadata={},
+        fk_params=load_fk("configs/fk_magician.yaml"),
+    )
+    adapter.capture()
+    assert source.last_tool_pose is not None
+    assert np.allclose(source.last_tool_pose[:3, 3], [0.12, 0.0, 0.02], atol=1e-6)

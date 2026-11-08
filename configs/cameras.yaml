@@ -5,24 +5,23 @@ cameras:
     role: 腕部相机，随机械臂末端移动
     view: 近景，正对末端吸盘与目标物块
     note: 水平朝前吸盘近景；黄/蓝块在画面上缘，安装角度固定随臂移动
-    calibration_note: self-calibrated at focus 350 (RMS 0.915px); hand-eye blocked
-      by yaw-only observability
-    hand_eye_note: 'full 6D T_tool rejected: 4-DOF arm + vertical suction gives yaw-only
-      camera rotation; AX=XB lacks a second rotation axis. Need mount geometry or
-      skip wrist extrinsics.'
+    calibration_note: self-cal K at focus 350, RMS 0.854 px; three-axis hand-eye provisional
+    hand_eye_note: three-axis frame (j4 ignored); T translation 0.129 m; board spread
+      7.06 mm / 4.94 deg; accepted provisional (rotation threshold relaxed to 5 deg
+      for the small board)
     intrinsic_K:
-    - - 1191.4294434375443
+    - - 1168.0978709043716
       - 0.0
       - 622.8279615876135
     - - 0.0
-      - 1191.4294434375443
+      - 1168.0978709043716
       - 388.0681856736048
     - - 0.0
       - 0.0
       - 1.0
     distortion:
-    - 0.21466929110743055
-    - -0.4487783471418171
+    - 0.20681283650923668
+    - -0.4450408982022446
     - 0.0
     - 0.0
     - 0.0
@@ -33,6 +32,25 @@ cameras:
     calibration_mode: marker_selfcal_focus
     focus_automatic_continuous: 0
     focus_absolute: 350
+    T_tool_from_optical:
+    - - -0.427463
+      - -0.143312
+      - -0.892601
+      - 0.121249
+    - - 0.863906
+      - 0.226141
+      - -0.45003
+      - -0.042801
+    - - 0.266349
+      - -0.963495
+      - 0.027141
+      - -0.030455
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+    hand_eye_date: '2026-11-08'
+    hand_eye_mode: auto_wrist_threeaxis_provisional
   front:
     device: /dev/video2
     usb_port: usb-0000:00:14.0-2

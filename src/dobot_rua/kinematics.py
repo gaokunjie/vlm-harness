@@ -13,6 +13,7 @@ from typing import Iterable, Sequence
 
 import numpy as np
 import yaml
+from scipy.spatial.transform import Rotation
 
 
 @dataclass(frozen=True)
@@ -146,3 +147,29 @@ def inverse_kinematics(
         ):
             unique.append(solution)
     return unique
+
+
+def three_axis_frame(
+    params: FKParams,
+    j1_deg: float,
+    j2_deg: float,
+    j3_deg: float,
+    x_mm: float,
+    y_mm: float,
+    z_mm: float,
+) -> np.ndarray:
+    """Pose of the three-axis end frame (j1/j2/j3); j4 is deliberately absent.
+
+    The wrist camera is mounted on the non-j4 part of the arm. The last-link
+    angle is ``t2 + t3`` in the arm plane; the base yaw is j1. The origin is the
+    suction-tip position reported by the robot (j4 does not move it).
+    """
+    t2 = np.radians(float(j2_deg) + params.c2_deg)
+    t3 = np.radians(float(j3_deg) + params.c3_deg)
+    rotation = Rotation.from_euler("z", float(j1_deg), degrees=True) * Rotation.from_euler(
+        "y", -float(np.degrees(t2 + t3)), degrees=True
+    )
+    transform = np.eye(4)
+    transform[:3, :3] = rotation.as_matrix()
+    transform[:3, 3] = [x_mm / 1000.0, y_mm / 1000.0, z_mm / 1000.0]
+    return transform

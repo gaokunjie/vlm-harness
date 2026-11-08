@@ -29,7 +29,7 @@ from dobot_rua.calibration.intrinsics import calibrate_from_marker_detections
 from dobot_rua.geometry import pose_to_matrix
 from dobot_rua.hardware.dobot import DobotRobot
 from dobot_rua.hardware.safety import SafetyLimits
-from dobot_rua.kinematics import inverse_kinematics, load_fk
+from dobot_rua.kinematics import inverse_kinematics, load_fk, three_axis_frame
 
 
 def parser() -> argparse.ArgumentParser:
@@ -62,22 +62,24 @@ def tool_quaternion(r_deg: float) -> tuple[float, float, float, float]:
 
 def _offsets() -> list[tuple[float, float, float, float]]:
     # Relative to the raised pose; z never goes below raised_z - 10 mm.
+    # j4 is not used by the task and does not rotate the wrist camera; keep it
+    # fixed at zero and vary only the three-axis translation.
     return [
         (0, 0, 0, 0),
         (10, 0, 0, 0),
         (-10, 0, 0, 0),
         (0, 10, 0, 0),
         (0, -10, 0, 0),
-        (10, 10, 0, 5),
-        (-10, -10, 0, -5),
-        (10, -10, 0, -5),
-        (-10, 10, 0, 5),
-        (0, 0, -10, 10),
-        (0, 0, -10, -10),
-        (10, 0, -10, 5),
-        (-10, 0, -10, -5),
-        (0, 10, -10, 5),
-        (0, -10, -10, -5),
+        (10, 10, 0, 0),
+        (-10, -10, 0, 0),
+        (10, -10, 0, 0),
+        (-10, 10, 0, 0),
+        (0, 0, -10, 0),
+        (0, 0, -10, 0),
+        (10, 0, -10, 0),
+        (-10, 0, -10, 0),
+        (0, 10, -10, 0),
+        (0, -10, -10, 0),
     ]
 
 
@@ -273,9 +275,14 @@ def main() -> int:
                 continue
             camera_from_board, markers, corners, ids = detected
             state = robot.read_state()
-            base_from_tool = pose_to_matrix(
-                (state.x_mm / 1000.0, state.y_mm / 1000.0, state.z_mm / 1000.0),
-                tool_quaternion(state.r_deg),
+            base_from_tool = three_axis_frame(
+                parameters,
+                state.j1_deg,
+                state.j2_deg,
+                state.j3_deg,
+                state.x_mm,
+                state.y_mm,
+                state.z_mm,
             )
             gripper_poses.append(base_from_tool)
             detections.append((corners, ids))
@@ -362,7 +369,7 @@ def main() -> int:
             encoding="utf-8",
         )
         return 1
-    if translation_spread > 15.0 or rotation_spread > 2.5:
+    if translation_spread > 15.0 or rotation_spread > 5.0:
         print("board spread is too large; K saved, T_tool not saved")
         args.camera_config.write_text(
             yaml.safe_dump(config, sort_keys=False, allow_unicode=True),

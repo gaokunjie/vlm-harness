@@ -3,6 +3,7 @@ import pytest
 
 from dobot_rua.kinematics import (
     forward_kinematics,
+    three_axis_frame,
     inverse_kinematics,
     load_fk,
     load_limits,
@@ -52,3 +53,11 @@ def test_within_limits_margin():
     assert within_limits((0.0, 45.0, 45.0, 0.0), limits)
     assert not within_limits((89.0, 45.0, 45.0, 0.0), limits, margin_deg=2.0)
     assert not within_limits((0.0, -1.0, 45.0, 0.0), limits)
+
+
+def test_three_axis_frame_uses_j1_j2_j3_and_ignores_j4():
+    params = load_fk("configs/fk_magician.yaml")
+    frame_a = three_axis_frame(params, 0.0, 45.0, 45.0, 100.0, 0.0, 50.0)
+    assert np.allclose(frame_a[:3, 3], [0.1, 0.0, 0.05])
+    frame_b = three_axis_frame(params, 0.0, 45.0, 60.0, 100.0, 0.0, 50.0)
+    assert not np.allclose(frame_a[:3, :3], frame_b[:3, :3])
