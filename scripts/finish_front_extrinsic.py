@@ -31,6 +31,7 @@ from dobot_rua.calibration.touch import (
     reprojection_rms,
 )
 from dobot_rua.hardware.dobot import DobotRobot
+from dobot_rua.kinematics import forward_kinematics, load_fk
 
 
 def parser() -> argparse.ArgumentParser:
@@ -193,17 +194,22 @@ def record(args) -> int:
     robot.connect()
     state = robot.read_state()
     robot.close()
+    params = load_fk("configs/fk_magician.yaml")
+    tip = forward_kinematics(params, state.j1_deg, state.j2_deg, state.j3_deg)
     session["touches"].append(
         {
             "marker": int(args.marker),
-            "base_mm": [state.x_mm, state.y_mm, state.z_mm],
+            "base_mm": tip.tolist(),
+            "reported_mm": [state.x_mm, state.y_mm, state.z_mm],
+            "joints_deg": [state.j1_deg, state.j2_deg, state.j3_deg, state.j4_deg],
             "time": time.strftime("%H:%M:%S"),
         }
     )
     args.session.write_text(json.dumps(session, indent=1), encoding="utf-8")
     print(
-        f"recorded marker {args.marker} at "
-        f"({state.x_mm:.1f}, {state.y_mm:.1f}, {state.z_mm:.1f}) mm"
+        f"recorded marker {args.marker}: FK tip ({tip[0]:.1f}, {tip[1]:.1f}, "
+        f"{tip[2]:.1f}) mm  (reported ({state.x_mm:.1f}, {state.y_mm:.1f}, "
+        f"{state.z_mm:.1f}))"
     )
     return 0
 
@@ -220,7 +226,10 @@ def solve(args) -> int:
         dtype=float,
     ) / 1000.0
     solution = solve_from_touches(
-        np.asarray(session["rotation_cam_board"], dtype=float), base, camera
+        np.asarray(session["rotation_cam_board"], dtype=float),
+        base,
+        camera,
+        camera_z_mm=float(session["camera_height_mm"]),
     )
     print(f"touch fit: RMS {solution.rms_mm:.2f} mm  per point {np.round(solution.residuals_mm, 2)}")
     print(f"camera yaw about vertical: {np.degrees(solution.yaw_rad):.1f} deg")

@@ -75,7 +75,29 @@ cameras:
     image_size:
     - 720
     - 1280
-    calibration_date: '2026-11-07'
+    calibration_date: '2026-11-08'
+    T_world_from_optical:
+    - - 0.892164684343855
+      - 0.4513969656844496
+      - 0.01682127761204302
+      - 0.17258481505944184
+    - - -0.45156135549201054
+      - 0.8902957756328909
+      - 0.05887082568171895
+      - -0.012906263814406571
+    - - -0.011598199681316073
+      - 0.06011831053099446
+      - -0.9981238753296361
+      - 0.33122495179374356
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+    calibration_mode: level_board_two_touch
+    touch_residual_mm: 17.546
+    touch_points: 2
+    board_reprojection_px: 1.221
+    camera_height_mm: 331.22
   side:
     device: /dev/video4
     usb_port: usb-0000:00:14.0-4

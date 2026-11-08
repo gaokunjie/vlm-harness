@@ -25,7 +25,12 @@ from pathlib import Path
 
 from dobot_rua.hardware.dobot import DobotRobot
 from dobot_rua.hardware.jog import JogBox, next_target
-from dobot_rua.kinematics import inverse_kinematics, load_fk, load_limits
+from dobot_rua.kinematics import (
+    forward_kinematics,
+    inverse_kinematics,
+    load_fk,
+    load_limits,
+)
 
 HELP = __doc__
 
@@ -65,17 +70,20 @@ def _record_touch(session: Path, robot: DobotRobot) -> None:
         payload = json.loads(session.read_text(encoding="utf-8"))
         payload.setdefault("touches", [])
     state = robot.read_state()
+    tip = forward_kinematics(load_fk("configs/fk_magician.yaml"), state.j1_deg, state.j2_deg, state.j3_deg)
     payload["touches"].append(
         {
             "marker": marker,
-            "base_mm": [state.x_mm, state.y_mm, state.z_mm],
+            "base_mm": tip.tolist(),
+            "reported_mm": [state.x_mm, state.y_mm, state.z_mm],
+            "joints_deg": [state.j1_deg, state.j2_deg, state.j3_deg, state.j4_deg],
             "time": time.strftime("%H:%M:%S"),
         }
     )
     session.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     print(
-        f"recorded marker {marker} at ({state.x_mm:.1f}, {state.y_mm:.1f}, "
-        f"{state.z_mm:.1f}) mm -> {session}"
+        f"recorded marker {marker}: FK tip ({tip[0]:.1f}, {tip[1]:.1f}, "
+        f"{tip[2]:.1f}) mm -> {session}"
     )
 
 

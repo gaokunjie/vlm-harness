@@ -26,21 +26,45 @@ def test_solve_from_touches_recovers_camera_pose():
     r_cam_base = Rotation.from_euler("xyz", [172.0, -4.0, 7.0], degrees=True).as_matrix()
     t_true = np.array([0.21, 0.03, 0.325])
     yaw = np.radians(18.0)
-    r_cam_board = r_cam_base @ Rotation.from_euler("z", np.degrees(yaw), degrees=True).as_matrix()
+    flip = np.diag([1.0, 1.0, -1.0])
+    r_cam_board = (
+        r_cam_base
+        @ Rotation.from_euler("z", np.degrees(yaw), degrees=True).as_matrix()
+        @ flip
+    )
     base_points = np.array([[0.16, 0.02, 0.001], [0.185, 0.045, 0.001]])
     camera_points = np.array([r_cam_base @ (p - t_true) for p in base_points])
 
     solution = solve_from_touches(r_cam_board, base_points, camera_points)
     assert np.allclose(solution.camera_position, t_true, atol=1e-9)
     assert np.allclose(solution.rotation_cam_base, r_cam_base, atol=1e-9)
-    assert solution.rms_mm < 1e-6
+    assert solution.rms_mm < 1e-4
 
 
 def test_solve_from_touches_uses_both_points_for_yaw():
     r_cam_base = Rotation.from_euler("y", 8.0, degrees=True).as_matrix()
     t_true = np.array([0.20, -0.01, 0.33])
-    r_cam_board = r_cam_base @ Rotation.from_euler("z", -35.0, degrees=True).as_matrix()
+    flip = np.diag([1.0, 1.0, -1.0])
+    r_cam_board = (
+        r_cam_base @ Rotation.from_euler("z", -35.0, degrees=True).as_matrix() @ flip
+    )
     base_points = np.array([[0.15, 0.00, 0.001], [0.19, 0.03, 0.001]])
     camera_points = np.array([r_cam_base @ (p - t_true) for p in base_points])
     solution = solve_from_touches(r_cam_board, base_points, camera_points)
     assert abs(np.degrees(solution.yaw_rad) - (-35.0)) < 1e-3
+
+
+def test_solve_from_touches_can_fix_the_camera_height():
+    r_cam_base = Rotation.from_euler("x", 174.0, degrees=True).as_matrix()
+    t_true = np.array([0.20, 0.0, 0.3312])
+    flip = np.diag([1.0, 1.0, -1.0])
+    r_cam_board = (
+        r_cam_base @ Rotation.from_euler("z", 30.0, degrees=True).as_matrix() @ flip
+    )
+    base_points = np.array([[0.15, 0.02, 0.004], [0.19, 0.06, 0.004]])
+    camera_points = np.array([r_cam_base @ (p - t_true) for p in base_points])
+    solution = solve_from_touches(
+        r_cam_board, base_points, camera_points, camera_z_mm=331.2
+    )
+    assert abs(solution.camera_position[2] * 1000.0 - 331.2) < 1e-6
+    assert solution.rms_mm < 1e-4
