@@ -46,6 +46,14 @@ def test_real_camera_source_passes_calibration_through():
                 device="fake",
                 intrinsic_K=K,
                 T_world_from_optical=T,
+                calibration_status="VALID",
+                planar={
+                    "status": "VALID",
+                    "distortion": [0, 0, 0, 0, 0],
+                    "T_world_from_optical": T,
+                    "H_table": np.eye(3).tolist(),
+                    "H_top": np.eye(3).tolist(),
+                },
             )
         },
         capture_factory=lambda spec: FakeCapture(np.zeros((4, 4, 3), dtype=np.uint8)),
@@ -73,7 +81,9 @@ def test_wrist_tool_from_optical_composes_with_tool_pose():
     tool_pose = np.eye(4)
     tool_pose[:3, 3] = [0.1, 0.2, 0.3]
     frames = source.capture(["wrist"], tool_pose=tool_pose)
-    assert source.has_calibration is True
+    # Front is the task-critical camera; a wrist-only source is not a
+    # calibrated episode source even though its transform is valid.
+    assert source.has_calibration is False
     assert np.allclose(
         frames["wrist"].T_world_from_optical, tool_pose @ tool_from_camera
     )
@@ -125,6 +135,12 @@ def _write_calibration_config(path, matrix) -> None:
                     [0.0, 0.0, 1.0],
                 ],
                 "T_world_from_optical": matrix,
+                "calibration_status": "VALID",
+                "planar": {
+                    "T_world_from_optical": matrix,
+                    "H_table": np.eye(3).tolist(),
+                    "H_top": np.eye(3).tolist(),
+                },
             }
         }
     }
@@ -199,3 +215,85 @@ def test_uncalibrated_camera_drops_its_intrinsics():
     frames = source.capture(["side"])
     assert frames["side"].intrinsic_K is None
     assert frames["side"].T_world_from_optical is None
+
+
+def _planar_config(tmp_path, planar, status="VALID"):
+    data = {
+        "capture": {"default_size": [720, 1280]},
+        "cameras": {
+            "front": {
+                "device": "/dev/video2",
+                "intrinsic_K": np.eye(3).tolist(),
+                "distortion": [0, 0, 0, 0, 0],
+                "T_world_from_optical": np.eye(4).tolist(),
+                "calibration_status": status,
+                "planar": planar,
+                "tip_length_mm": 66.6,
+            }
+        },
+    }
+    path = tmp_path / "cameras.yaml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_valid_planar_T_overrides_stale_T(tmp_path):
+    T = np.eye(4)
+    T[0, 3] = 0.123
+    path = _planar_config(
+        tmp_path,
+        {
+            "T_world_from_optical": T.tolist(),
+            "H_table": np.eye(3).tolist(),
+            "H_top": np.eye(3).tolist(),
+        },
+    )
+    spec = load_camera_specs(path)["front"]
+    assert np.allclose(spec.T_world_from_optical, T)
+    assert spec.calibration_status == "VALID"
+    assert spec.planar is not None
+    assert spec.planar["status"] == "VALID"
+    assert spec.planar["distortion"] == [0, 0, 0, 0, 0]
+
+
+def test_invalid_planar_leaves_front_uncalibrated(tmp_path):
+    path = _planar_config(tmp_path, None, status="INVALID")
+    spec = load_camera_specs(path)["front"]
+    assert spec.T_world_from_optical is None
+    assert spec.intrinsic_K is None
+    assert RealCameraSource({"front": spec}).has_calibration is False
+
+
+def test_planar_reflection_rejected(tmp_path):
+    T = np.eye(4)
+    T[2, 2] = -1.0
+    path = _planar_config(
+        tmp_path,
+        {
+            "T_world_from_optical": T.tolist(),
+            "H_table": np.eye(3).tolist(),
+            "H_top": np.eye(3).tolist(),
+        },
+    )
+    with pytest.raises(ValueError):
+        load_camera_specs(path)
+
+
+def test_capture_sets_planar_calibration(tmp_path):
+    T = np.eye(4)
+    T[0, 3] = 0.123
+    path = _planar_config(
+        tmp_path,
+        {
+            "T_world_from_optical": T.tolist(),
+            "H_table": np.eye(3).tolist(),
+            "H_top": np.eye(3).tolist(),
+        },
+    )
+    spec = load_camera_specs(path)["front"]
+    source = RealCameraSource(
+        {"front": spec}, capture_factory=lambda s: FakeCapture(np.zeros((4, 4, 3), dtype=np.uint8))
+    )
+    frame = source.capture(["front"])["front"]
+    assert frame.calibration["status"] == "VALID"
+    assert np.allclose(frame.T_world_from_optical, T)

@@ -12,6 +12,8 @@ import yaml
 
 from uni_robot_agent.services.environment.snapshots import CameraFrame
 
+from ..geometry import validate_rigid_transform
+
 
 @dataclass(frozen=True)
 class CameraSpec:
@@ -24,6 +26,9 @@ class CameraSpec:
     intrinsic_K: list | None = None
     T_world_from_optical: list | None = None
     T_tool_from_optical: list | None = None
+    distortion: list | None = None
+    calibration_status: str | None = None
+    planar: dict | None = None
 
 
 def _normalize_fourcc(value: str) -> str:
@@ -81,9 +86,49 @@ def load_camera_specs(path: str | Path) -> dict[str, CameraSpec]:
     fourcc = _normalize_fourcc(capture.get("format", "mjpg"))
     specs: dict[str, CameraSpec] = {}
     for name, item in data["cameras"].items():
-        for field in ("T_world_from_optical", "T_tool_from_optical"):
-            if item.get(field) is not None:
-                _validate_rigid(name, item[field], field)
+        status = item.get("calibration_status")
+        planar_raw = item.get("planar")
+        distortion = item.get("distortion")
+        intrinsic = item.get("intrinsic_K")
+        extrinsic = item.get("T_world_from_optical")
+        tool_extrinsic = item.get("T_tool_from_optical")
+        planar = None
+        valid_planar = (
+            name == "front" and status == "VALID" and isinstance(planar_raw, dict)
+        )
+        if valid_planar:
+            validate_rigid_transform(
+                planar_raw["T_world_from_optical"],
+                f"camera {name}: planar.T_world_from_optical",
+            )
+            for homography_name in ("H_table", "H_top"):
+                homography = np.asarray(planar_raw[homography_name], dtype=float)
+                if homography.shape != (3, 3) or not np.isfinite(homography).all():
+                    raise ValueError(
+                        f"camera {name}: planar.{homography_name} must be finite 3x3"
+                    )
+                if abs(float(np.linalg.det(homography))) < 1e-12:
+                    raise ValueError(
+                        f"camera {name}: planar.{homography_name} is singular"
+                    )
+            extrinsic = planar_raw["T_world_from_optical"]
+            planar = {
+                **planar_raw,
+                "status": status,
+                "calibration_hash": item.get("calibration_hash"),
+                "distortion": planar_raw.get("distortion", distortion),
+            }
+        elif name == "front":
+            # A front camera without a valid planar calibration must fail
+            # closed; the legacy top-level T is not a second source of truth.
+            intrinsic = None
+            extrinsic = None
+            tool_extrinsic = None
+            planar = None
+        else:
+            for field in ("T_world_from_optical", "T_tool_from_optical"):
+                if item.get(field) is not None:
+                    _validate_rigid(name, item[field], field)
         specs[name] = CameraSpec(
             name=name,
             device=str(item["device"]),
@@ -91,9 +136,12 @@ def load_camera_specs(path: str | Path) -> dict[str, CameraSpec]:
             height=int(height),
             fps=fps,
             fourcc=fourcc,
-            intrinsic_K=item.get("intrinsic_K"),
-            T_world_from_optical=item.get("T_world_from_optical"),
-            T_tool_from_optical=item.get("T_tool_from_optical"),
+            intrinsic_K=intrinsic,
+            T_world_from_optical=extrinsic,
+            T_tool_from_optical=tool_extrinsic,
+            distortion=distortion,
+            calibration_status=status,
+            planar=planar,
         )
     return specs
 
@@ -109,13 +157,15 @@ class RealCameraSource:
         self.specs = dict(specs)
         self._capture_factory = capture_factory or self._opencv_capture
         self._captures: dict[str, Any] = {}
-        self.has_calibration = bool(self.specs) and all(
-            spec.intrinsic_K is not None
+        front = self.specs.get("front")
+        self.has_calibration = bool(
+            front is not None
+            and front.intrinsic_K is not None
             and (
-                spec.T_world_from_optical is not None
-                or spec.T_tool_from_optical is not None
+                front.T_world_from_optical is not None
+                or front.T_tool_from_optical is not None
             )
-            for spec in self.specs.values()
+            and front.calibration_status == "VALID"
         )
 
     def _opencv_capture(self, spec: CameraSpec) -> Any:
@@ -174,6 +224,7 @@ class RealCameraSource:
                     else np.asarray(spec.intrinsic_K, dtype=float)
                 ),
                 T_world_from_optical=world_from_optical,
+                calibration=spec.planar,
             )
         return frames
 
