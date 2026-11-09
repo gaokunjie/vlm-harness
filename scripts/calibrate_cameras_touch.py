@@ -55,6 +55,16 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--dictionary", default=None)
     p.add_argument("--touch-count", type=int, default=8)
     p.add_argument("--settle-s", type=float, default=2.0)
+    p.add_argument(
+        "--reachable-columns",
+        default=None,
+        help="0-indexed board columns the arm can touch, e.g. 2-5 or 2,3,4,5",
+    )
+    p.add_argument(
+        "--reachable-rows",
+        default=None,
+        help="0-indexed board rows the arm can touch, e.g. 1-5 or 2-6",
+    )
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--image-dir", type=Path, default=Path("audit/touch"))
@@ -70,6 +80,20 @@ def _camera_config(config: dict, role: str):
         np.asarray(camera.get("distortion") or np.zeros(5), dtype=float),
         camera["device"],
     )
+
+
+def _parse_columns(spec: str) -> set[int]:
+    columns: set[int] = set()
+    for part in str(spec).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            low, high = part.split("-", 1)
+            columns.update(range(int(low), int(high) + 1))
+        else:
+            columns.add(int(part))
+    return columns
 
 
 def _capture(device: str, width: int, height: int) -> np.ndarray:
@@ -173,33 +197,48 @@ def main() -> int:
         for value in np.asarray(board.getIds()).reshape(-1)
         if int(value) in touch_visible
     ]
-    selected = [
-        marker_id
-        for marker_id in extreme_marker_ids(
-            board, max(args.touch_count * 3, 12)
-        )
-        if marker_id in touch_visible
-    ]
     board_centers_map = {
         marker_id: marker_center(board, marker_id) for marker_id in all_visible
     }
-    while len(selected) < min(args.touch_count, len(all_visible)):
-        remaining = [value for value in all_visible if value not in selected]
-        if not remaining:
-            break
+    reachable_columns = _parse_columns(args.reachable_columns or "2-5")
+    reachable_rows = _parse_columns(args.reachable_rows or "1-5")
+    square_m = square_mm / 1000.0
+    candidates = [
+        marker_id
+        for marker_id in all_visible
+        if int(board_centers_map[marker_id][0] / square_m) in reachable_columns
+        and int(board_centers_map[marker_id][1] / square_m) in reachable_rows
+    ]
+    if not candidates:
+        raise SystemExit(
+            "no visible markers in the reachable rows/columns; "
+            f"columns={sorted(reachable_columns)} rows={sorted(reachable_rows)}"
+        )
+    centroid = np.mean(
+        [board_centers_map[marker_id][:2] for marker_id in candidates], axis=0
+    )
+    seed = max(
+        candidates,
+        key=lambda marker_id: float(
+            np.linalg.norm(board_centers_map[marker_id][:2] - centroid)
+        ),
+    )
+    selected = [seed]
+    while len(selected) < min(args.touch_count, len(candidates)):
+        remaining = [
+            marker_id for marker_id in candidates if marker_id not in selected
+        ]
         best = max(
             remaining,
-            key=lambda value: min(
+            key=lambda marker_id: min(
                 float(
                     np.linalg.norm(
-                        board_centers_map[value][:2]
+                        board_centers_map[marker_id][:2]
                         - board_centers_map[other][:2]
                     )
                 )
                 for other in selected
-            )
-            if selected
-            else 0.0,
+            ),
         )
         selected.append(best)
     selected = tuple(selected[: args.touch_count])
