@@ -76,44 +76,44 @@ cameras:
     - 720
     - 1280
     calibration_date: '2026-11-09'
-    calibration_status: INVALID
+    calibration_status: PROVISIONAL
     planar:
       T_world_from_optical:
-      - - -0.9996907198862629
-        - -0.016977884882179273
-        - 0.018171846307202394
-        - 0.1837891578166902
-      - - -0.01656784871762643
-        - 0.9996099585217801
-        - 0.022481930810197295
-        - -0.004180527463174016
-      - - -0.0185464541666314
-        - 0.02217390919554159
-        - -0.9995820860683893
-        - 0.24240228718684004
+      - - -0.9930445272120834
+        - -0.11659754764001246
+        - -0.016357837829767293
+        - 0.19315198087641833
+      - - -0.11657252014885726
+        - 0.9931790898561149
+        - -0.002478511392594026
+        - 0.005215925269232841
+      - - 0.016535250837956504
+        - -0.000554397794046013
+        - -0.9998631296946655
+        - 0.23800138025782372
       - - 0.0
         - 0.0
         - 0.0
         - 1.0
       H_table:
-      - - -0.00029978776067782334
-        - -9.304836949740376e-06
-        - 0.3844453837108683
-      - - -5.102798115792918e-06
-        - 0.00030550806905257764
-        - -0.1076519670427461
-      - - 1.860153119935746e-05
-        - -2.2403514045235257e-05
+      - - -0.0002958190692500808
+        - -3.4508844120448096e-05
+        - 0.3876817761275839
+      - - -3.4440425170536055e-05
+        - 0.0002948582671491528
+        - -0.08319816763312783
+      - - -1.6352642240601692e-05
+        - 5.523123014725605e-07
         - 1.0
       H_top:
-      - - -0.0002747212736439705
-        - -8.875994792205106e-06
-        - 0.3678568661635289
-      - - -4.687371867656425e-06
-        - 0.0002802590528010785
-        - -0.09909784526822706
-      - - 1.860153119935746e-05
-        - -2.2403514045235257e-05
+      - - -0.00027126712558495894
+        - -3.160487062999049e-05
+        - 0.3713622380198357
+      - - -3.1558296656489296e-05
+        - 0.00027012219159185493
+        - -0.07578091231489181
+      - - -1.6352642240601692e-05
+        - 5.523123014725605e-07
         - 1.0
       p_cup_board_mm:
       - 0.0
@@ -124,18 +124,18 @@ cameras:
       block_height_m: 0.025
       board_thickness_m: 0.002
       calibrated_region:
-      - - 0.294117676438024
-        - 0.10833048525250061
-      - - 0.3002713232816888
-        - -0.09291484627058146
-      - - 0.07028306101960352
-        - -0.09994108143071162
-      - - 0.06412941417593873
-        - 0.10130425009237046
+      - - 0.28061240598390874
+        - 0.11912377205648064
+      - - 0.30692362915782884
+        - -0.08048771153712184
+      - - 0.07879449977694132
+        - -0.1105545967851555
+      - - 0.05248327660302124
+        - 0.08905688680844699
       calibration_status: PROVISIONAL
       calibration_mode: touch_board
-      touch_rms_mm: 6.895413722429043
-      touch_max_mm: 9.399711909907042
+      touch_rms_mm: 10.90511972269751
+      touch_max_mm: 21.22712880296415
       provisional: true
       camera_controls:
         focus_automatic_continuous: 0
@@ -159,13 +159,13 @@ cameras:
     white_balance_automatic: 0
     white_balance_temperature: 4600
     calibration_note: DO NOT USE. The tip length was updated to 71.0 mm on 2026-11-09;
-      the previous touch planar was fitted with 66.6 mm and is stale. Re-run
-      scripts/calibrate_cameras_touch.py with the 7x8 board and reachable rows/columns.
+      the previous touch planar was fitted with 66.6 mm and is stale. Re-run scripts/calibrate_cameras_touch.py
+      with the 7x8 board and reachable rows/columns.
     tip_length_mm: 71.0
     tip_length_measured_at: '2026-11-09'
     tip_length_note: Vertical distance from the flange reference plane (the end mounting
-      face) to the suction-cup lip. Updated to 71.0 mm on 2026-11-09. The cup is
-      vertical and centred on j4, so tip xy = flange xy and tip z = flange z - 71.0.
+      face) to the suction-cup lip. Updated to 71.0 mm on 2026-11-09. The cup is vertical
+      and centred on j4, so tip xy = flange xy and tip z = flange z - 71.0.
     T_world_from_optical_invalid_reflection_2026-11-08:
     - - 0.892164684343855
       - 0.4513969656844496
@@ -184,7 +184,7 @@ cameras:
       - 0.0
       - 1.0
     calibration_mode: touch_board
-    touch_residual_mm: 6.895
+    touch_residual_mm: 10.905
     touch_points: 8
     board_reprojection_px: 0.894
     camera_height_mm: 331.81
@@ -215,20 +215,20 @@ cameras:
     - -0.41
     - 0.0
     poses: 13
-    calibration_hash: 2d96b074cf449df13ae8b30cd4b2d64ee0905b7800ad248f2befd9dfcdcd268c
+    calibration_hash: 0886b3b8824e6c936548e4446ddd19d1e2bbb099d2ad03da0763ae6100d12137
     T_world_from_optical:
-    - - -0.9996907198862629
-      - -0.016977884882179273
-      - 0.018171846307202394
-      - 0.1837891578166902
-    - - -0.01656784871762643
-      - 0.9996099585217801
-      - 0.022481930810197295
-      - -0.004180527463174016
-    - - -0.0185464541666314
-      - 0.02217390919554159
-      - -0.9995820860683893
-      - 0.24240228718684004
+    - - -0.9930445272120834
+      - -0.11659754764001246
+      - -0.016357837829767293
+      - 0.19315198087641833
+    - - -0.11657252014885726
+      - 0.9931790898561149
+      - -0.002478511392594026
+      - 0.005215925269232841
+    - - 0.016535250837956504
+      - -0.000554397794046013
+      - -0.9998631296946655
+      - 0.23800138025782372
     - - 0.0
       - 0.0
       - 0.0
