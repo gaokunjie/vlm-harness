@@ -197,3 +197,4 @@ def test_dobot_move_joints_uses_movj_angle():
     assert driver.calls
     assert driver.calls[-1][3] == 88.0
     assert driver.calls[-1][4].name == "MOVJ_ANGLE"
+    assert driver.calls[-1][5] is False

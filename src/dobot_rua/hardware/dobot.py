@@ -200,13 +200,16 @@ class DobotRobot:
         if not hasattr(self._driver, "_set_ptp_cmd"):
             raise NotImplementedError("driver does not expose joint commands")
         self._driver.speed(20.0, 20.0)
+        target = (float(j1_deg), float(j2_deg), float(j3_deg), float(j4_deg))
+        # wait=False avoids pydobot crashing when a serial response is lost;
+        # the settle poll below is the real completion check.
         self._driver._set_ptp_cmd(
-            float(j1_deg),
-            float(j2_deg),
-            float(j3_deg),
-            float(j4_deg),
+            target[0],
+            target[1],
+            target[2],
+            target[3],
             mode=PTPMode.MOVJ_ANGLE,
-            wait=True,
+            wait=False,
         )
         deadline = time.monotonic() + float(timeout_s) + 2.0
         last = None
@@ -214,9 +217,11 @@ class DobotRobot:
         while time.monotonic() < deadline:
             state = self.read_state()
             joints = (state.j1_deg, state.j2_deg, state.j3_deg, state.j4_deg)
-            if last is not None and max(
+            near_target = max(abs(a - b) for a, b in zip(joints, target)) <= 1.0
+            settled = last is not None and max(
                 abs(a - b) for a, b in zip(joints, last)
-            ) < 0.2:
+            ) < 0.2
+            if near_target and settled:
                 stable += 1
                 if stable >= 5:
                     return
@@ -224,7 +229,7 @@ class DobotRobot:
                 stable = 0
             last = joints
             time.sleep(0.1)
-        raise TimeoutError("joint move did not settle")
+        raise TimeoutError("joint move did not reach the target")
 
     def set_suction(self, on: bool) -> None:
         if self._driver is None:

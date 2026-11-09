@@ -57,9 +57,23 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--rows", type=int, default=3)
     p.add_argument("--samples-per-plane", type=int, default=None)
     p.add_argument("--holdout", type=int, default=2)
+    p.add_argument("--min-markers", type=int, default=6)
     p.add_argument("--timeout-s", type=float, default=25.0)
     p.add_argument("--no-save", action="store_true")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--no-home",
+        action="store_true",
+        help="start from the current pose instead of homing (keeps j4 locked)",
+    )
+    p.add_argument(
+        "--mask-rect",
+        nargs=4,
+        type=int,
+        default=None,
+        metavar=("X0", "Y0", "X1", "Y1"),
+        help="paint this image rectangle white before board detection",
+    )
     return p
 
 
@@ -186,11 +200,20 @@ def main() -> int:
     samples: list[PlanarSample] = []
     board_poses: list[np.ndarray] = []
     try:
-        robot.home(
-            home_deg=home_deg,
-            post_home_j4_offset_deg=j4_offset,
-            timeout_s=float(robot_config.get("home_timeout_s", 120.0)),
-        )
+        if args.no_home:
+            state = robot.read_state()
+            if abs(state.j4_deg - j4_offset) > 1.0:
+                print(
+                    f"j4={state.j4_deg:.2f} is not at the locked offset "
+                    f"{j4_offset:.2f}; home first or adjust j4"
+                )
+                return 2
+        else:
+            robot.home(
+                home_deg=home_deg,
+                post_home_j4_offset_deg=j4_offset,
+                timeout_s=float(robot_config.get("home_timeout_s", 120.0)),
+            )
         for pose in plan:
             state = robot.read_state()
             current_joints = (state.j1_deg, state.j2_deg, state.j3_deg)
@@ -206,9 +229,20 @@ def main() -> int:
             if solution is None:
                 print(f"skip {pose.plane} ({pose.x_mm:.1f},{pose.y_mm:.1f}): unreachable")
                 continue
-            robot.move_joints(
-                solution[0], solution[1], solution[2], j4_offset, timeout_s=args.timeout_s
-            )
+            try:
+                robot.move_joints(
+                    solution[0],
+                    solution[1],
+                    solution[2],
+                    j4_offset,
+                    timeout_s=args.timeout_s,
+                )
+            except Exception as error:
+                print(
+                    f"skip {pose.plane} ({pose.x_mm:.1f},{pose.y_mm:.1f}): "
+                    f"move failed: {error}"
+                )
+                continue
             state = robot.read_state()
             tip = np.array(
                 [state.x_mm, state.y_mm, state.z_mm - tip_length_mm], dtype=float
@@ -217,6 +251,9 @@ def main() -> int:
                 print(f"skip {pose.plane} ({pose.x_mm:.1f},{pose.y_mm:.1f}): not settled")
                 continue
             image = _capture_front(device, int(width), int(height))
+            if args.mask_rect:
+                x0, y0, x1, y1 = args.mask_rect
+                image[y0:y1, x0:x1] = 255
             corners, ids = detect_board(board, image)
             cup = cup_center_pixel(
                 corners,
@@ -253,13 +290,33 @@ def main() -> int:
     if len(samples) < 6:
         print(f"only {len(samples)} usable samples; need at least 6")
         return 1
-    normal_spread = _max_normal_spread_deg(board_poses)
-    print(f"board normal spread: {normal_spread:.2f} deg")
+    accepted_poses = [
+        pose
+        for pose, sample in zip(board_poses, samples)
+        if sample.marker_count >= args.min_markers
+    ]
+    normal_spread = _max_normal_spread_deg(accepted_poses)
+    print(f"board normal spread (markers>={args.min_markers}): {normal_spread:.2f} deg")
     try:
         camera_controls = camera_controls_from_config(front)
     except ValueError as error:
         print(f"calibration rejected: {error}")
         return 1
+    audit_dir = Path("audit")
+    audit_dir.mkdir(exist_ok=True)
+    (audit_dir / "front_planar_last.json").write_text(
+        json.dumps(
+            {
+                "samples": [asdict(sample) for sample in samples],
+                "board_normal_spread_deg": normal_spread,
+                "board_poses": [pose.tolist() for pose in board_poses],
+                "min_markers": args.min_markers,
+                "measured_at": time.strftime("%Y-%m-%d"),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     try:
         calibration, diagnostics = fit_two_plane(
             samples,
@@ -272,6 +329,7 @@ def main() -> int:
             board_thickness_m,
             camera_controls,
             holdout=args.holdout,
+            min_marker_count=args.min_markers,
         )
     except CalibrationRejected as error:
         print(f"calibration rejected: {error}")

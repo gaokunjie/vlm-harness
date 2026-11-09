@@ -1,8 +1,10 @@
 # Task tolerances (metres). Pre-registered before formal DOE.
-table_z_m: -0.021
-block_size_m: 0.025          # side length (placeholder; measure)
-block_height_m: 0.025        # actual height used for H_top (placeholder; measure)
-board_thickness_m: 0.002     # pattern/backing thickness (placeholder; measure)
+# 2026-11-09 measured: table 60 mm below the base, block 25 mm, board thickness negligible.
+table_z_m: -0.060
+block_size_m: 0.025
+block_height_m: 0.025
+# Use a 2 mm clearance for the lower plane so the board does not drag on the table.
+board_thickness_m: 0.002
 pick_tolerance_m: 0.006
 target_tolerance_m: 0.008
 place_radius_m: 0.0175

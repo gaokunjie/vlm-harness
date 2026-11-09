@@ -79,13 +79,13 @@ cameras:
     calibration_status: INVALID
     planar: null
     cup_center_in_board_mm: [25.0, 75.0, 0.0]
-    # Required before calibrating (fill from `v4l2-ctl -d /dev/video2 --list-ctrls`):
-    # focus_automatic_continuous: 0
-    # focus_absolute: <value>
-    # auto_exposure: 1
-    # exposure: <value>
-    # white_balance_automatic: 0
-    # white_balance_temperature: <value>
+    # Locked from `v4l2-ctl -d /dev/video2 --list-ctrls` on 2026-11-09.
+    focus_automatic_continuous: 0
+    focus_absolute: 0
+    auto_exposure: 1
+    exposure: 280
+    white_balance_automatic: 0
+    white_balance_temperature: 4600
     calibration_note: DO NOT USE. This matrix was produced from the stale 5-touch
       session (25.39 mm fit residual, no usable holdout) during a debugging run. The
       robot base moved; discard it and re-calibrate after homing with a fixed board
