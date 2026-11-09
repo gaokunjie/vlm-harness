@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
@@ -25,6 +26,12 @@ import numpy as np
 import yaml
 
 from dobot_rua.calibration.charuco import make_board
+from dobot_rua.calibration.front_planar import (
+    PlanarCalibration,
+    camera_controls_from_config,
+    compute_calibration_hash,
+    save_planar_calibration,
+)
 from dobot_rua.calibration.touch import (
     camera_board_pose,
     camera_extrinsic,
@@ -32,6 +39,8 @@ from dobot_rua.calibration.touch import (
     fit_board_from_touches,
     marker_center,
 )
+from dobot_rua.geometry import derive_homography
+from dobot_rua.hardware.cameras import load_tip_length_mm
 from dobot_rua.hardware.dobot import DobotRobot
 
 
@@ -41,9 +50,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--camera-config", type=Path, default=Path("configs/cameras.yaml"))
     p.add_argument("--output", type=Path, default=Path("configs/cameras.yaml"))
     p.add_argument("--robot-port", default="/dev/dobot_follower")
+    p.add_argument("--task-config", type=Path, default=Path("configs/task.yaml"))
     p.add_argument("--board-preset", choices=("large", "wrist"), default="large")
-    p.add_argument("--dictionary", default="DICT_4X4_50")
-    p.add_argument("--touch-count", type=int, default=4)
+    p.add_argument("--dictionary", default=None)
+    p.add_argument("--touch-count", type=int, default=8)
+    p.add_argument("--settle-s", type=float, default=2.0)
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--image-dir", type=Path, default=Path("audit/touch"))
@@ -111,12 +122,15 @@ def main() -> int:
     config = yaml.safe_load(args.camera_config.read_text(encoding="utf-8"))
     if args.board_preset == "wrist":
         squares_x, squares_y, square_mm, marker_mm = 5, 5, 10.0, 7.5
+        dictionary_name = args.dictionary or "DICT_4X4_50"
     else:
-        squares_x, squares_y, square_mm, marker_mm = 7, 8, 25.0, 18.75
+        # The 8x7 large board is printed with 8 columns and 7 rows.
+        squares_x, squares_y, square_mm, marker_mm = 8, 7, 25.0, 18.75
+        dictionary_name = args.dictionary or "DICT_5X5_1000"
     board = make_board(
-        squares_x, squares_y, square_mm, marker_mm, args.dictionary
+        squares_x, squares_y, square_mm, marker_mm, dictionary_name
     )
-    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, args.dictionary))
+    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary_name))
     detector = cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
     cameras = [name.strip() for name in args.cameras.split(",") if name.strip()]
 
@@ -158,6 +172,9 @@ def main() -> int:
             f"({center[0]*1000:.1f}, {center[1]*1000:.1f}, {center[2]*1000:.1f}) mm"
         )
 
+    tip_length_mm = load_tip_length_mm(args.camera_config)
+    if tip_length_mm <= 0.0:
+        raise SystemExit("front tip_length_mm is missing; measure TCP first")
     robot = DobotRobot(port=args.robot_port)
     robot.connect()
     base_points = []
@@ -167,9 +184,14 @@ def main() -> int:
                 f"Jog the suction tip to the center of marker ID {marker_id}, "
                 "then press Enter..."
             )
+            time.sleep(float(args.settle_s))
             state = robot.read_state()
             base_points.append(
-                [state.x_mm / 1000.0, state.y_mm / 1000.0, state.z_mm / 1000.0]
+                [
+                    state.x_mm / 1000.0,
+                    state.y_mm / 1000.0,
+                    (state.z_mm - tip_length_mm) / 1000.0,
+                ]
             )
             print(
                 f"  recorded base ({state.x_mm:.1f}, {state.y_mm:.1f}, "
@@ -201,6 +223,72 @@ def main() -> int:
         yaml.safe_dump(config, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
+    if "front" in camera_poses:
+        task = yaml.safe_load(args.task_config.read_text(encoding="utf-8")) or {}
+        table_z_m = float(task.get("table_z_m", 0.0))
+        block_height_m = float(
+            task.get("block_height_m", task.get("block_size_m", 0.025))
+        )
+        board_thickness_m = float(task.get("board_thickness_m", 0.002))
+        block_top_z_m = table_z_m + block_height_m
+        intrinsic, distortion, _ = _camera_config(config, "front")
+        front_t = camera_extrinsic(fit.transform, camera_poses["front"])
+        h_table = derive_homography(front_t, intrinsic, table_z_m)
+        h_top = derive_homography(front_t, intrinsic, block_top_z_m)
+        # Region = metric board footprint expanded by 20 mm.
+        width_m = squares_x * square_mm / 1000.0
+        height_m = squares_y * square_mm / 1000.0
+        board_corners = np.array(
+            [[0, 0, 0], [width_m, 0, 0], [width_m, height_m, 0], [0, height_m, 0]],
+            dtype=float,
+        )
+        world_corners = (
+            fit.transform[:3, :3] @ board_corners.T
+        ).T + fit.transform[:3, 3]
+        polygon = world_corners[:, :2]
+        centroid = polygon.mean(axis=0)
+        directions = polygon - centroid
+        norms = np.linalg.norm(directions, axis=1, keepdims=True)
+        region = polygon + directions / np.maximum(norms, 1e-9) * 0.02
+        status = (
+            "VALID"
+            if fit.rms_mm <= 2.0 and fit.max_mm <= 3.0
+            else "PROVISIONAL"
+        )
+        calibration = PlanarCalibration(
+            T_world_from_optical=front_t,
+            H_table=h_table,
+            H_top=h_top,
+            intrinsic_K=np.asarray(intrinsic, dtype=float),
+            distortion=np.asarray(distortion, dtype=float).reshape(-1),
+            p_cup_board_mm=(0.0, 0.0, 0.0),
+            table_z_m=table_z_m,
+            block_top_z_m=block_top_z_m,
+            block_height_m=block_height_m,
+            board_thickness_m=board_thickness_m,
+            calibrated_region=region,
+            camera_controls=camera_controls_from_config(
+                config["cameras"]["front"]
+            ),
+            fit_rmse_px=0.0,
+            holdout_max_px=0.0,
+            samples=len(base_points),
+            calibration_hash="",
+            measured_at=time.strftime("%Y-%m-%d"),
+            calibration_status=status,
+            calibration_mode="touch_board",
+            touch_rms_mm=fit.rms_mm,
+            touch_max_mm=fit.max_mm,
+        )
+        calibration = replace(
+            calibration,
+            calibration_hash=compute_calibration_hash(calibration),
+        )
+        save_planar_calibration(args.output, "front", calibration)
+        print(
+            f"front planar: status={status} touch_rms={fit.rms_mm:.2f} mm "
+            f"touch_max={fit.max_mm:.2f} mm"
+        )
     print(f"wrote {args.output}")
     return 0
 

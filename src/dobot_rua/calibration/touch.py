@@ -78,11 +78,28 @@ def extreme_marker_ids(
         [[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]]
     )
     selected: list[int] = []
+    selected_indices: list[int] = []
     for corner in corners:
         distances = np.linalg.norm(centers[:, :2] - corner, axis=1)
-        marker_id = int(ids[int(np.argmin(distances))])
+        index = int(np.argmin(distances))
+        marker_id = int(ids[index])
         if marker_id not in selected:
             selected.append(marker_id)
+            selected_indices.append(index)
+    # Spread additional touch points as far as possible from the current set.
+    while len(selected) < min(count, len(ids)):
+        candidates = [i for i in range(len(ids)) if i not in selected_indices]
+        if not candidates:
+            break
+        best_index = max(
+            candidates,
+            key=lambda i: min(
+                float(np.linalg.norm(centers[i, :2] - centers[j, :2]))
+                for j in selected_indices
+            ),
+        )
+        selected_indices.append(best_index)
+        selected.append(int(ids[best_index]))
     return tuple(selected[:count])
 
 

@@ -104,6 +104,9 @@ class PlanarCalibration:
     calibration_hash: str
     measured_at: str
     calibration_status: str = "VALID"
+    calibration_mode: str = "two_plane_pnp"
+    touch_rms_mm: float | None = None
+    touch_max_mm: float | None = None
 
 
 def _json_default(value: Any) -> Any:
@@ -136,6 +139,9 @@ def compute_calibration_hash(calibration: PlanarCalibration) -> str:
         "samples": calibration.samples,
         "measured_at": calibration.measured_at,
         "calibration_status": calibration.calibration_status,
+        "calibration_mode": calibration.calibration_mode,
+        "touch_rms_mm": calibration.touch_rms_mm,
+        "touch_max_mm": calibration.touch_max_mm,
     }
     encoded = json.dumps(fields, sort_keys=True, default=_json_default)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -185,6 +191,7 @@ def fit_two_plane(
     max_fit_rmse_px: float = 2.0,
     max_holdout_px: float = 3.0,
     calibration_status: str = "VALID",
+    calibration_mode: str | None = None,
 ) -> tuple[PlanarCalibration, dict[str, Any]]:
     """Fit ``T_world_from_optical`` from samples on two parallel planes."""
     if abs(float(block_top_z_m) - float(table_z_m)) < 0.02:
@@ -280,6 +287,12 @@ def fit_two_plane(
         calibration_hash="",
         measured_at=measured_at or time.strftime("%Y-%m-%d"),
         calibration_status=calibration_status,
+        calibration_mode=calibration_mode
+        or (
+            "two_plane_pnp_provisional"
+            if calibration_status == "PROVISIONAL"
+            else "two_plane_pnp"
+        ),
     )
     calibration = replace(
         calibration, calibration_hash=compute_calibration_hash(calibration)
@@ -314,11 +327,7 @@ def save_planar_calibration(
     camera["intrinsic_K"] = calibration.intrinsic_K.tolist()
     camera["distortion"] = calibration.distortion.tolist()
     camera["calibration_status"] = calibration.calibration_status
-    camera["calibration_mode"] = (
-        "two_plane_pnp_provisional"
-        if calibration.calibration_status == "PROVISIONAL"
-        else "two_plane_pnp"
-    )
+    camera["calibration_mode"] = calibration.calibration_mode
     camera["calibration_date"] = calibration.measured_at
     camera["calibration_hash"] = calibration.calibration_hash
     camera["planar"] = {
@@ -332,6 +341,9 @@ def save_planar_calibration(
         "board_thickness_m": calibration.board_thickness_m,
         "calibrated_region": calibration.calibrated_region.tolist(),
         "calibration_status": calibration.calibration_status,
+        "calibration_mode": calibration.calibration_mode,
+        "touch_rms_mm": calibration.touch_rms_mm,
+        "touch_max_mm": calibration.touch_max_mm,
         "provisional": calibration.calibration_status == "PROVISIONAL",
         "camera_controls": dict(calibration.camera_controls),
         "fit_rmse_px": calibration.fit_rmse_px,
@@ -409,6 +421,19 @@ def load_planar_calibration(
                 planar.get("measured_at", camera.get("calibration_date", ""))
             ),
             calibration_status=str(status),
+            calibration_mode=str(
+                planar.get("calibration_mode", camera.get("calibration_mode", "two_plane_pnp"))
+            ),
+            touch_rms_mm=(
+                None
+                if planar.get("touch_rms_mm") is None
+                else float(planar["touch_rms_mm"])
+            ),
+            touch_max_mm=(
+                None
+                if planar.get("touch_max_mm") is None
+                else float(planar["touch_max_mm"])
+            ),
         )
     except (KeyError, TypeError, ValueError):
         return None
