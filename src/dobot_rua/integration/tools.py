@@ -238,6 +238,7 @@ class PerceptionTools(ToolProvider):
             intrinsic,
             extrinsic,
             self._block_top_z(),
+            colors=tuple(self._metadata().get("block_colors", ("blue", "yellow"))),
             distortion=distortion,
         )
         if region is not None:
@@ -360,6 +361,7 @@ class PerceptionTools(ToolProvider):
             intrinsic,
             extrinsic,
             self._block_top_z(),
+            colors=tuple(self._metadata().get("block_colors", ("blue", "yellow"))),
             distortion=distortion,
         )
         if region is not None:

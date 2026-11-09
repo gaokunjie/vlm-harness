@@ -43,6 +43,9 @@ def _task_metadata(path: Path) -> dict:
         "block_top_z_m": table_z + block_height,
         "block_height_m": block_height,
         "place_radius_m": place_radius,
+        "block_colors": [
+            str(color) for color in data.get("block_colors", ["blue", "yellow"])
+        ],
     }
 
 

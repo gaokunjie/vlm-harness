@@ -209,3 +209,16 @@ def test_provisional_tools_are_marked(tmp_path):
     assert output.success is True
     assert output.extra["calibration_status"] == "PROVISIONAL"
     assert output.extra["provisional"] is True
+
+
+def test_list_objects_honors_configured_block_colors(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    image = cv2.imread(str(image_path))
+    cv2.rectangle(image, (400, 300), (440, 340), (0, 255, 0), -1)  # green, BGR
+    cv2.imwrite(str(image_path), image)
+    episode = _episode(image_path)
+    episode.description.environment.metadata["block_colors"] = ["green"]
+    output = PerceptionTools(episode).list_objects()
+    assert output.success
+    assert {block["color"] for block in output.extra["blocks"]} == {"green"}
