@@ -124,9 +124,10 @@ def main() -> int:
         squares_x, squares_y, square_mm, marker_mm = 5, 5, 10.0, 7.5
         dictionary_name = args.dictionary or "DICT_4X4_50"
     else:
-        # The 8x7 large board is printed with 8 columns and 7 rows.
-        squares_x, squares_y, square_mm, marker_mm = 8, 7, 25.0, 18.75
-        dictionary_name = args.dictionary or "DICT_5X5_1000"
+        # The large board is printed with 7 columns and 8 rows (detected
+        # layout for the current 25 mm / DICT_4X4_50 board).
+        squares_x, squares_y, square_mm, marker_mm = 7, 8, 25.0, 18.75
+        dictionary_name = args.dictionary or "DICT_4X4_50"
     board = make_board(
         squares_x, squares_y, square_mm, marker_mm, dictionary_name
     )
@@ -134,23 +135,75 @@ def main() -> int:
     detector = cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
     cameras = [name.strip() for name in args.cameras.split(",") if name.strip()]
 
-    print("Move the arm out of the board view (survey pose), then press Enter.")
+    print(
+        "Place the arm where enough markers are visible (partial occlusion is "
+        "fine), then press Enter."
+    )
     input()
     camera_poses: dict[str, np.ndarray] = {}
+    visible_ids_by_camera: dict[str, set[int]] = {}
     for role in cameras:
         intrinsic, distortion, device = _camera_config(config, role)
-        frame = _capture(device, args.width, args.height)
-        corners, ids, _ = detector.detectMarkers(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        if ids is None or len(ids) < 4:
-            raise SystemExit(f"{role}: board not detected; adjust lighting/view")
+        while True:
+            frame = _capture(device, args.width, args.height)
+            corners, ids, _ = detector.detectMarkers(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            )
+            count = 0 if ids is None else len(ids)
+            if count >= 6:
+                break
+            input(
+                f"{role}: only {count} markers visible; adjust the arm so at "
+                "least 6 are visible, then press Enter..."
+            )
         pose = camera_board_pose(board, corners, ids, intrinsic, distortion)
         if pose is None:
             raise SystemExit(f"{role}: solvePnP failed")
         camera_poses[role] = pose
-        print(f"{role}: detected {len(ids)} markers")
+        visible_ids_by_camera[role] = {
+            int(value) for value in np.asarray(ids).reshape(-1)
+        }
+        print(f"{role}: detected {len(ids)} markers (partial occlusion allowed)")
 
-    selected = extreme_marker_ids(board, args.touch_count)
-    board_centers = [marker_center(board, marker_id) for marker_id in selected]
+    touch_visible = visible_ids_by_camera.get("front")
+    if touch_visible is None:
+        touch_visible = next(iter(visible_ids_by_camera.values()))
+    all_visible = [
+        int(value)
+        for value in np.asarray(board.getIds()).reshape(-1)
+        if int(value) in touch_visible
+    ]
+    selected = [
+        marker_id
+        for marker_id in extreme_marker_ids(
+            board, max(args.touch_count * 3, 12)
+        )
+        if marker_id in touch_visible
+    ]
+    board_centers_map = {
+        marker_id: marker_center(board, marker_id) for marker_id in all_visible
+    }
+    while len(selected) < min(args.touch_count, len(all_visible)):
+        remaining = [value for value in all_visible if value not in selected]
+        if not remaining:
+            break
+        best = max(
+            remaining,
+            key=lambda value: min(
+                float(
+                    np.linalg.norm(
+                        board_centers_map[value][:2]
+                        - board_centers_map[other][:2]
+                    )
+                )
+                for other in selected
+            )
+            if selected
+            else 0.0,
+        )
+        selected.append(best)
+    selected = tuple(selected[: args.touch_count])
+    board_centers = [board_centers_map[marker_id] for marker_id in selected]
     # Annotate with the selected IDs highlighted.
     for role in cameras:
         # Re-capture is unnecessary for annotation; use the last frame? Re-read

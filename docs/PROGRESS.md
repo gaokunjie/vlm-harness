@@ -394,3 +394,10 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - `load_camera_specs`/`RealCameraSource` 接受 PROVISIONAL；感知工具输出 `calibration_status` 与 `provisional=true`；server 启动时打印警告。
 - **不得用于正式 DOE**；正式实验前必须换刚性衬底、重新标定并通过 2 px/3 px 门限，改为 `VALID`。
 - 生成脚本：`python scripts/make_provisional_calibration.py`（不动机器人，读 `audit/front_planar_last.json`）。
+
+## 2026-11-09 大板触碰标定（7×8 / 25 mm，DICT_4X4_50）
+
+- 板固定白板，机械臂遮挡部分 marker；当前 home 位姿下仍可见 **15 个 marker**，板位姿重投影约 **1.1–1.6 px**，足够。
+- 触碰脚本改为：可见 marker ≥6 即可，不再要求整板可见；触点从**可见 marker**中选 8 个分散点；每次触点后等 2 s；记录吸盘尖（法兰 − 66.6 mm）。
+- 结果写入 planar：`calibration_mode: touch_board`、`touch_rms_mm`/`touch_max_mm`、`calibrated_region` = 板足迹 + 20 mm（约 195×220 mm）；RMS ≤2 mm 且 max ≤3 mm 标 VALID，否则 PROVISIONAL。
+- 运行：`python scripts/calibrate_cameras_touch.py --cameras front --board-preset large --touch-count 8 --settle-s 2.0`。
