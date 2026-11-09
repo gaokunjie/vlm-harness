@@ -92,6 +92,61 @@ def test_find_line_intersection_reads_snapshot(tmp_path):
     assert np.allclose(red.extra["intersection_uv"], (250.0, 350.0), atol=5.0)
 
 
+def test_front_tools_fail_clearly_when_uncalibrated(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["T_world_from_optical"] = None
+    tools = PerceptionTools(episode)
+
+    output = tools.list_objects()
+
+    assert output.success is False
+    assert "calibrat" in (output.error or "").lower()
+
+
+def test_find_line_intersection_fails_when_uncalibrated(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["T_world_from_optical"] = None
+    tools = PerceptionTools(episode)
+
+    output = tools.find_line_intersection("black")
+
+    assert output.success is False
+    assert "calibrat" in (output.error or "").lower()
+
+
+def test_verify_place_fails_when_uncalibrated(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["T_world_from_optical"] = None
+    episode.description.environment.metadata["mock"] = False
+    tools = PerceptionTools(episode)
+
+    output = tools.verify_place()
+
+    assert output.success is False
+    assert "calibrat" in (output.error or "").lower()
+
+
+def test_front_tools_reject_a_reflected_snapshot_extrinsic(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["T_world_from_optical"] = np.diag(
+        [1.0, 1.0, -1.0, 1.0]
+    ).tolist()
+    tools = PerceptionTools(episode)
+
+    output = tools.list_objects()
+
+    assert output.success is False
+    assert "proper" in (output.error or "").lower()
+
+
 def test_wrist_tools_use_measured_state(tmp_path):
     image_path = tmp_path / "front.png"
     _scene(image_path)

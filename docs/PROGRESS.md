@@ -5,7 +5,7 @@
 - 上游：uni-robot-agent `f3e0ec0`（v0.1.1）
 - 设计：`../docs/superpowers/specs/2026-11-07-rua-line-intersection-design.md`
 - 计划：`../docs/superpowers/plans/2026-11-07-rua-line-intersection-implementation.md`
-- 当前测试：**78 passed**（`.venv/bin/python -m pytest`）
+- 当前测试：**141 passed**（`.venv/bin/python -m pytest`，2026-11-09）
 
 ## 已完成（无需用户/硬件）
 
@@ -283,8 +283,89 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 感知：ArUco 检测参数调优（窗 11–35）+ ≥6 marker + 重投影 ≤2 px 门限；`DobotRobot.close(release=False)`；按 FK 尖端记录触点（固件位姿另存）。
 - 测试：**107 passing**。
 
-### 下一步（优先级）
+### 下一步（优先级，2026-11-09 更新）
 
-1. **对齐机器人模型**（阻塞一切绝对标定）：确认 `fk_magician.yaml` 是否本机；或读出固件配置的末端工具点（DobotStudio End Effector）并与 FK 对齐；对齐后重跑 `finish_front_extrinsic.py solve` + `validate_front_extrinsic.py`。
-2. 若模型短期无法对齐：改用**视觉伺服**（不需要绝对外参），先跑通"检测 → 小步闭环 → 抓放"。
-3. 外参验证通过前，DOE 只跑 mock / 离线部分。
+1. **测吸盘尖 TCP**（6–8 个不同 `j2/j3` 姿态，tool-frame spread <2 mm），决定写 `AdapterConfig.tcp_mm` 还是固件 EE offset；全链保持一致。
+2. **同一 session 重拍板 + 8–10 触点**（记录 tip，不是 flange），跑 `finish_front_extrinsic.py solve`（相机+TCP 联合解、`Rx(180)` 板约定、3 mm 门限）；held-out 3D ≤3 mm 才保存。
+3. **闭环独立验证** 10–20 点（+x/+y、近/远），bias <2 mm、随机 <3 mm；每 session touch bias <3 mm，超了暂停。
+4. 外参验收通过前，DOE 只跑 mock / 离线部分；视觉伺服仍可作为保底演示。
+
+## 2026-11-09 帧图修复（代码，无硬件）
+
+- 确认并记录：保存的 front `T_world_from_optical` 是反射（`det(R) = -1`），根因是 `level_board.py` 用 `diag(1,1,-1)` 处理“板 +z 朝下”；正确刚体是 `Rx(180) = diag(1,-1,-1)`。`tests/test_level_board.py` 原先用同一个反射构造合成真值，所以测试一直绿。
+- `level_board.solve_from_touches` 和 `tcp_extrinsic.solve_camera_and_tcp` 现在拒绝非 proper 旋转；`solve_camera_and_tcp` 增加 `board_normal_down` 约定（默认 True，按 solvePnP 的真实板系处理）。
+- `configs/cameras.yaml` 的前视矩阵重命名为 `T_world_from_optical_invalid_reflection_2026-11-08`，`calibration_status: INVALID`；front 现在 `has_calibration=false`，不会被误用。
+- `hardware/cameras.py` 在 `load_camera_specs` 时强制校验 `det(R)=+1`、正交、底行；反射/非正交直接报错（fail-closed）。
+- **物理模型（2026-11-09）**：实测 **L = 66.6 mm**（末端安装面→吸盘唇口）；固件 `GetEndEffectorParams=(0,0,0)`，确认控制器报的是法兰；上一轮 `71.6` 是脏参数。吸盘竖直、在 j4 轴心上，所以 `tip = flange − (0,0,L)`，x/y 不变。
+- **底座被移动过**：front/side 外参、桌面 z、targets、旧触点 session 全部作废；先回零，再重标。
+- `DobotAdapter` 的 `control_frame="suction_tip"` 现在名实相符：`AdapterConfig.tip_length_mm`（竖直标量 66.6 mm）；`read_state` 报吸盘尖 = 法兰 − (0,0,L)，`step_pose` 收吸盘尖目标并下发给法兰 = 目标 + (0,0,L)；`position_error_mm` 按尖端算；`capture()` 仍用三轴法兰系给 wrist 手眼（吸盘与 wrist 是两个不同的工具帧）。
+- `finish_front_extrinsic.py`：板默认改为 large；保存门限 3 mm；用 tip 点（flange − 66.6）跑 `level_board.solve_from_touches`；加 det/相机 z 合理性检查；不再使用 3 维 `solve_camera_and_tcp`。
+- `annotate_reachability.py --save`：残差 >3 mm 或 det≤0 时拒绝保存，并提示改用 `finish_front_extrinsic.py solve`。
+- 感知工具层：front `T_world_from_optical` 缺失/非 proper 时返回 `success=false` + 明确错误（不再因 `np.asarray(None)` 抛 IndexError）。
+- 废弃 3 维工具系 `flange_for_tip`：尖端目标→法兰命令只是 `+ (0,0,66.6)`；`three_axis_frame` 只留给 wrist 相机。
+- `scripts/validate_front_extrinsic.py --move`：按 `tip_length_mm`（默认 66.6）下发吸盘尖目标（法兰 = tip + (0,0,L)）；`--tip-length-mm` 可覆盖。
+- `finish_front_extrinsic.py solve`：新增 `--holdout`（默认 2，均匀留出）和 `--max-holdout-mm`；残差/留出 3 mm 门禁，`--max-*` 只能收紧，`--force` 才能放宽（调试用）。旧 5 触点 fit 26.17 mm / 留出 42.27 mm，被拒绝；没有误写 config。
+- 测试：**134 passed**。
+- 仍未做：front 重标定、闭环验证。旧 5 触点用新模型残差 25.39 mm，仍被 3 mm 门禁拒绝；需要回零后 fresh session。
+
+## 2026-11-08/09 手眼根因、末端码标定与首次真机 episode
+
+### 1. 回零：之前一直没回零
+
+- 用户提示后执行厂家 `SetHOMECmd`（协议 id 31）：关节回到 **(0, 45, 45, 0)**、固件位姿 **(199.40, 0.00, −8.49)**；两次回零结果完全一致，可重复。
+- 结论：**每次上电必须回零**，否则关节零点不可信，FK/固件位姿全部偏。
+
+### 2. FK 模型形式错误（根因）
+
+- 旧 `fk_magician.yaml` 用的是「相对肘角」形式（`L1cos(t2)+L2cos(t2+t3)`，`t=j+c`），与这台臂的固件不是同一个运动学：回零后 7 个位姿的 FK/固件差从 13 mm 变到 108 mm，任何常量偏移或相似变换都拟合不了。
+- 用 18 个回零后样本做**线性化拟合**（`calibration/fk_fit.py`，基函数 `[1, cos j2, sin j2, cos j3, sin j3]`），得到**厂商约定**：
+  ```
+  r = L1·sin(j2) + L2·cos(j3)        z = L1·cos(j2) − L2·sin(j3)
+  a≈0  h≈0  L1=135.000  L2=147.000  c2=90.000  c3=0.000
+  ```
+- 残差 **0.000 mm**（18 样本），5 个**留出**新位姿 **0.00 mm**。
+- 独立佐证：`robot_limits.yaml` 的 ready 关节 (0, 10.88, 49.98) 代入新模型 → **(120.0, 0, 20.0)**，与文件记录一致；用户用尺子实测连杆 **135 / 147 mm**，与固件模型吻合。
+- 改动：`kinematics.forward_kinematics` / `inverse_kinematics` / `three_axis_frame` 全部改为该约定；新增 `scripts/fit_fk.py`（`--collect` 扫位姿、`--save` 写 config）。
+
+### 3. 超限会让控制器断 USB（不是线缆松动）
+
+- 机械臂在 j3 ≈ **−5°** 附近锁死并**断开串口**（`ttyUSB0` 重新枚举成 `ttyUSB1`），回零（HOME）可恢复。
+- 之前误判为"USB 线被拉扯"；用户指出是**超过关节限位**导致。
+- 现在所有扫掠/移动脚本都在下发前做 **IK + 限位校验（留 5° 余量）**，并校验到位误差 ≤4 mm，否则跳过该位姿。
+
+### 4. 末端 ArUco 标定（新方案，替代手工触点）
+
+- 用户在末端平面贴了一个 **18 mm** ArUco（正对吸盘中心）。
+- 模型：码中心 = 法兰 + `Rz(j4)·offset`；相机高度与码的 z 偏置**不可分离**（整体平移不变），因此固定 `offset_z = 0`。
+- 结果（中心模型，13 个低处位姿）：**相机 (189.8, −10.8, 177.1) mm**，重投影 **RMS 14.6 px / max 24 px ≈ 2.6 mm**。
+- 四角模型（含角点序 y 翻转 + 镜头畸变）残差 24 px，不如中心模型，未采用；`solve_camera_from_marker_corners` 保留备用。
+- **重要发现**：新解出的相机高度 ~177 mm，而旧"大板解"是 331.8 mm，差 1.8 倍 → **相机/底座被动过，旧外参本来就作废**；也解释了此前所有互相矛盾的尺度现象（0.8 比值等）。
+- 已写入 `configs/cameras.yaml`（`calibration_mode: ee_marker_sweep`，`det(R)=+1`），标注残差。
+
+### 5. 场景与任务参数
+
+- `configs/task.yaml`：`table_z_m` 从 0.0 改为 **−0.021**（吸盘尖实测落在白板面的固件 z）。
+- 前相机装得很低（~180 mm），机械臂会**遮挡大半个画面**：home 位姿正好压住黑十字；停在 (150,−50,20) 时黑十字可见。相机不能抬高，只能靠选停放位姿规避。
+- 黑十字可检测；**红十字太淡**，现有阈值检测不到。
+
+### 6. 首次真机 episode（uni-robot-agent + DeepSeek）
+
+- 环境服务正常；两个已修复的问题：
+  - `ALL_PROXY=socks://…` 会让 httpx 崩溃 → 启动时 `env -u ALL_PROXY -u all_proxy`；
+  - 侧视相机有内参但无外参时快照层直接拒绝 → `RealCameraSource` 现在对未标定相机**两者都不传**（新增测试）。
+- 第一次运行：服务端 episode 被标记 `failed`，后续请求全部 `episode_closed`（未定位到根因，重启服务后消失）。
+- 第二次运行（端口 18763，`--max-turns 12`）：agent 完成 `capture_scene → 识别黄块/黑十字 → move → 抓取 → 抬升 → 搬运`，日志确认**吸住黄块并移动到黑十字上方 (0.173, 0.003, 0.004)**；在最后放置阶段因超时被中断，**没有正式的落点误差数据**。
+- 保留记录：`runs/real_agent_4/`（trajectory、images、result）。
+
+### 7. 测试与清理
+
+- 测试：**141 passed**（新增 `test_fk_fit.py`、`test_ee_marker.py`、未标定相机用例）。
+- 清理（磁盘 2.2 GB → 1.3 GB，不含 `.venv` 56 MB）：删除 `runs/*/*/.codex`（780 MB 的 Codex 运行态）、旧 episode、`audit/` 59 张调试图与 `audit/cameras`、`__pycache__`、`/tmp` 残留；保留 `runs/real_agent_4` 与标定 JSON。
+
+### 8. 下一步
+
+1. **收敛 front 外参**：残差 2.6 mm 卡在验收线；可再加 20 个位姿（覆盖图像左右两侧），或重标前相机内参（当前残差在图像右侧明显偏大）。
+2. **补一次完整放置**：从 `runs/real_agent_4` 的中断点继续，量出落点误差（bias / 随机），决定是否需要视觉伺服兜底。
+3. 红十字太淡：换更饱和的颜料或调检测阈值，否则"红色目标"这一 DOE 维度不可用。
+4. 外参达标前，正式 DOE 仍只跑 mock/离线。
+

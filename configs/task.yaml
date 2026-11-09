@@ -1,5 +1,5 @@
 # Task tolerances (metres). Pre-registered before formal DOE.
-table_z_m: 0.0
+table_z_m: -0.021
 block_size_m: 0.025
 pick_tolerance_m: 0.006
 target_tolerance_m: 0.008

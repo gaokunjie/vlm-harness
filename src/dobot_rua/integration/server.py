@@ -9,7 +9,7 @@ import yaml
 
 from uni_robot_agent.integrations.simulation import serve_episode
 
-from ..hardware.cameras import RealCameraSource, load_camera_specs
+from ..hardware.cameras import RealCameraSource, load_camera_specs, load_tip_length_mm
 from ..hardware.dobot import DobotRobot
 from ..hardware.safety import SafetyLimits
 from ..kinematics import load_fk
@@ -54,7 +54,10 @@ def prepare(args: argparse.Namespace) -> DobotAdapter:
     adapter = DobotAdapter(
         robot=robot,
         camera_source=camera_source,
-        config=AdapterConfig(has_calibration=camera_source.has_calibration),
+        config=AdapterConfig(
+            has_calibration=camera_source.has_calibration,
+            tip_length_mm=load_tip_length_mm(args.camera_config),
+        ),
         episode_id=args.run_id,
         instruction=args.instruction,
         metadata=metadata,

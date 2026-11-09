@@ -18,6 +18,7 @@ import yaml
 
 from dobot_rua.calibration.charuco import make_board
 from dobot_rua.calibration.level_board import solve_from_touches
+from dobot_rua.hardware.cameras import load_tip_length_mm
 from dobot_rua.calibration.touch import camera_board_pose, marker_center
 from dobot_rua.kinematics import inverse_kinematics, load_fk, load_limits
 from dobot_rua.calibration.touch import reprojection_rms
@@ -40,6 +41,8 @@ def main() -> int:
     distortion = np.asarray(front.get("distortion") or np.zeros(5), dtype=float)
 
     base = np.array([t["base_mm"] for t in session["touches"]], dtype=float) / 1000.0
+    tip_length_m = load_tip_length_mm(args.camera_config) / 1000.0
+    base[:, 2] -= tip_length_m
     camera = np.array(
         [session["markers"][str(t["marker"])]["camera_mm"] for t in session["touches"]],
         dtype=float,
@@ -48,7 +51,6 @@ def main() -> int:
         np.asarray(session["rotation_cam_board"], dtype=float),
         base,
         camera,
-        camera_z_mm=float(session["camera_height_mm"]),
     )
     transform = np.eye(4)
     transform[:3, :3] = solution.rotation_cam_base.T
@@ -113,10 +115,18 @@ def main() -> int:
     print(f"reachable markers at z={args.z_mm} mm: {reachable_count}/{len(ids)}")
     print(f"wrote {args.output}")
 
-    if args.save:
+    determinant = float(np.linalg.det(transform[:3, :3]))
+    save_ok = solution.rms_mm <= 3.0 and determinant > 0.0
+    if args.save and not save_ok:
+        print(
+            f"touch rms {solution.rms_mm:.1f} mm / det {determinant:+.3f}; "
+            "refusing to save. Use finish_front_extrinsic.py solve with the TCP "
+            "model instead."
+        )
+    if args.save and save_ok:
         front["T_world_from_optical"] = transform.tolist()
         front["calibration_date"] = time.strftime("%Y-%m-%d")
-        front["calibration_mode"] = "level_board_two_touch"
+        front["calibration_mode"] = "level_board_vertical_tip"
         front["touch_residual_mm"] = round(solution.rms_mm, 3)
         front["touch_points"] = len(session["touches"])
         front["board_reprojection_px"] = round(rms, 3)

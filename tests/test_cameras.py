@@ -1,6 +1,13 @@
 import numpy as np
+import pytest
+import yaml
 
-from dobot_rua.hardware.cameras import CameraSpec, RealCameraSource, load_camera_specs
+from dobot_rua.hardware.cameras import (
+    CameraSpec,
+    RealCameraSource,
+    load_camera_specs,
+    load_tip_length_mm,
+)
 
 
 class FakeCapture:
@@ -96,3 +103,99 @@ capture:
     assert specs["front"].width == 1280
     assert specs["front"].height == 720
     assert specs["front"].fourcc == "MJPG"
+
+
+def _proper_transform() -> list[list[float]]:
+    transform = np.eye(4)
+    transform[:3, :3] = np.array(
+        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+    )
+    transform[:3, 3] = [0.17, -0.01, 0.33]
+    return transform.tolist()
+
+
+def _write_calibration_config(path, matrix) -> None:
+    config = {
+        "cameras": {
+            "front": {
+                "device": "/dev/video2",
+                "intrinsic_K": [
+                    [1000.0, 0.0, 640.0],
+                    [0.0, 1000.0, 360.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                "T_world_from_optical": matrix,
+            }
+        }
+    }
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+
+def test_load_accepts_a_proper_world_from_optical(tmp_path):
+    path = tmp_path / "cameras.yaml"
+    _write_calibration_config(path, _proper_transform())
+
+    specs = load_camera_specs(path)
+
+    assert specs["front"].T_world_from_optical is not None
+
+
+def test_load_rejects_a_reflected_world_from_optical(tmp_path):
+    matrix = np.array(_proper_transform())
+    matrix[:3, 1] *= -1.0  # orthonormal, but det = -1: a reflection
+    path = tmp_path / "cameras.yaml"
+    _write_calibration_config(path, matrix.tolist())
+
+    with pytest.raises(ValueError, match="proper|reflection|det"):
+        load_camera_specs(path)
+
+
+def test_load_tip_length_mm_reads_the_front_value(tmp_path):
+    path = tmp_path / "cameras.yaml"
+    _write_calibration_config(path, _proper_transform())
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["cameras"]["front"]["tip_length_mm"] = 66.6
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    assert load_tip_length_mm(path) == pytest.approx(66.6)
+
+
+def test_load_tip_length_mm_defaults_to_zero(tmp_path):
+    path = tmp_path / "cameras.yaml"
+    _write_calibration_config(path, _proper_transform())
+
+    assert load_tip_length_mm(path) == pytest.approx(0.0)
+
+
+def test_load_tip_length_mm_rejects_a_negative_value(tmp_path):
+    path = tmp_path / "cameras.yaml"
+    _write_calibration_config(path, _proper_transform())
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["cameras"]["front"]["tip_length_mm"] = -1.0
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="non-negative"):
+        load_tip_length_mm(path)
+
+
+def test_load_rejects_a_non_orthonormal_rotation(tmp_path):
+    matrix = np.array(_proper_transform())
+    matrix[:3, :3] *= 1.1
+    path = tmp_path / "cameras.yaml"
+    _write_calibration_config(path, matrix.tolist())
+
+    with pytest.raises(ValueError, match="orthonormal|proper"):
+        load_camera_specs(path)
+
+
+def test_uncalibrated_camera_drops_its_intrinsics():
+    # A camera with intrinsics but no extrinsic cannot be projected from; the
+    # frame must carry neither, otherwise the snapshot layer rejects the frame.
+    K = [[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]]
+    source = RealCameraSource(
+        {"side": CameraSpec(name="side", device="fake", intrinsic_K=K)},
+        capture_factory=lambda spec: FakeCapture(np.zeros((4, 4, 3), dtype=np.uint8)),
+    )
+    frames = source.capture(["side"])
+    assert frames["side"].intrinsic_K is None
+    assert frames["side"].T_world_from_optical is None

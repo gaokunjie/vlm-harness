@@ -1,8 +1,15 @@
-"""Calibrated planar two-link FK/IK for the Dobot Magician.
+"""Two-link FK/IK for the Dobot Magician, in the firmware's own convention.
 
-The model is the one fitted by the existing project's ``calibrate_fk.py``:
-``r = a + L1*cos(t2) + L2*cos(t2+t3)``, ``z = h + L1*sin(t2) + L2*sin(t2+t3)``,
-with ``t2 = j2 + c2`` and ``t3 = j3 + c3``. Lengths are millimetres.
+The controller reports **absolute** link angles with both joint angles
+mirrored, which the measured data reproduces exactly:
+
+    r = a + L1*cos(t2) + L2*cos(t3),  z = h + L1*sin(t2) + L2*sin(t3)
+    t2 = c2_deg - j2,                t3 = c3_deg - j3
+
+With the vendor's link lengths (135 mm, 147 mm, no offsets) this gives
+``(199.4, 0, -8.49)`` at the home pose ``(45, 45)`` and ``(120, 0, 20)`` at the
+documented ready pose ``(10.88, 49.98)``. The earlier "relative elbow" form
+(``L2*cos(t2+t3)``) is a different robot and must not be used.
 """
 
 from __future__ import annotations
@@ -53,18 +60,10 @@ def forward_kinematics(
     params: FKParams, j1_deg: float, j2_deg: float, j3_deg: float
 ) -> np.ndarray:
     """Return the suction-tip position ``(x, y, z)`` in millimetres."""
-    t2 = np.radians(float(j2_deg) + params.c2_deg)
-    t3 = np.radians(float(j3_deg) + params.c3_deg)
-    radius = (
-        params.a
-        + params.l1 * np.cos(t2)
-        + params.l2 * np.cos(t2 + t3)
-    )
-    z = (
-        params.h
-        + params.l1 * np.sin(t2)
-        + params.l2 * np.sin(t2 + t3)
-    )
+    t2 = np.radians(params.c2_deg - float(j2_deg))
+    t3 = np.radians(params.c3_deg - float(j3_deg))
+    radius = params.a + params.l1 * np.cos(t2) + params.l2 * np.cos(t3)
+    z = params.h + params.l1 * np.sin(t2) + params.l2 * np.sin(t3)
     j1 = np.radians(float(j1_deg))
     return np.array([radius * np.cos(j1), radius * np.sin(j1), z], dtype=float)
 
@@ -126,14 +125,17 @@ def inverse_kinematics(
         if cosine < -1.0 - 1e-9 or cosine > 1.0 + 1e-9:
             continue
         cosine = float(np.clip(cosine, -1.0, 1.0))
-        t3_abs = float(np.arccos(cosine))
+        # delta is the angle between the links (the elbow bend); the joints
+        # themselves are the two absolute link angles t2 and t3 = t2 + delta.
+        delta_abs = float(np.arccos(cosine))
 
-        for t3 in (t3_abs, -t3_abs):
+        for delta in (delta_abs, -delta_abs):
             t2 = np.arctan2(b, a) - np.arctan2(
-                params.l2 * np.sin(t3), params.l1 + params.l2 * np.cos(t3)
+                params.l2 * np.sin(delta), params.l1 + params.l2 * np.cos(delta)
             )
-            j2_deg = float(np.degrees(t2)) - params.c2_deg
-            j3_deg = float(np.degrees(t3)) - params.c3_deg
+            t3 = t2 + delta
+            j2_deg = params.c2_deg - float(np.degrees(t2))
+            j3_deg = params.c3_deg - float(np.degrees(t3))
             for j2_wrapped in _wrap_to_limits(j2_deg, limits[1]):
                 for j3_wrapped in _wrap_to_limits(j3_deg, limits[2]):
                     joints = (j1_deg, j2_wrapped, j3_wrapped)
@@ -161,15 +163,17 @@ def three_axis_frame(
     """Pose of the three-axis end frame (j1/j2/j3); j4 is deliberately absent.
 
     The wrist camera is mounted on the non-j4 part of the arm. The last-link
-    angle is ``t2 + t3`` in the arm plane; the base yaw is j1. The origin is the
-    suction-tip position reported by the robot (j4 does not move it).
+    angle is the absolute forearm angle ``t3`` in the arm plane; the base yaw is
+    j1. The origin is the suction-tip position reported by the robot (j4 does
+    not move it).
     """
-    t2 = np.radians(float(j2_deg) + params.c2_deg)
-    t3 = np.radians(float(j3_deg) + params.c3_deg)
+    t3 = np.radians(params.c3_deg - float(j3_deg))
     rotation = Rotation.from_euler("z", float(j1_deg), degrees=True) * Rotation.from_euler(
-        "y", -float(np.degrees(t2 + t3)), degrees=True
+        "y", -float(np.degrees(t3)), degrees=True
     )
     transform = np.eye(4)
     transform[:3, :3] = rotation.as_matrix()
     transform[:3, 3] = [x_mm / 1000.0, y_mm / 1000.0, z_mm / 1000.0]
     return transform
+
+

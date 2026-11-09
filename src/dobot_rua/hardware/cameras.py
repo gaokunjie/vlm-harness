@@ -33,6 +33,46 @@ def _normalize_fourcc(value: str) -> str:
     return code if len(code) == 4 else "MJPG"
 
 
+def _validate_rigid(name: str, matrix, field: str) -> None:
+    """Reject a camera transform that is not a proper rigid transform.
+
+    A reflection (``det(R) = -1``) is orthogonal but mirrors every projected
+    point; it has silently corrupted a front-camera extrinsic before, so it is
+    a hard load-time error rather than a warning.
+    """
+    transform = np.asarray(matrix, dtype=float)
+    if transform.shape != (4, 4) or not np.allclose(
+        transform[3], [0.0, 0.0, 0.0, 1.0], atol=1e-9
+    ):
+        raise ValueError(f"camera {name}: {field} must be a 4x4 homogeneous transform")
+    rotation = transform[:3, :3]
+    if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-6):
+        raise ValueError(f"camera {name}: {field} rotation is not orthonormal")
+    determinant = float(np.linalg.det(rotation))
+    if determinant <= 0.0:
+        raise ValueError(
+            f"camera {name}: {field} is not a proper rigid transform "
+            f"(det={determinant:.6f}); a reflection is invalid"
+        )
+
+
+def load_tip_length_mm(path: str | Path) -> float:
+    """Read the vertical flange-to-suction-cup-lip distance.
+
+    The cup is vertical and centred on j4, so this is a scalar stored next to
+    the front-camera calibration: ``tip_z = flange_z - tip_length_mm``.
+    Zero means "not measured".
+    """
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    value = (data.get("cameras", {}).get("front", {}) or {}).get("tip_length_mm")
+    if value is None:
+        return 0.0
+    length = float(value)
+    if length < 0.0:
+        raise ValueError("front.tip_length_mm must be non-negative")
+    return length
+
+
 def load_camera_specs(path: str | Path) -> dict[str, CameraSpec]:
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     capture = data.get("capture", {})
@@ -41,6 +81,9 @@ def load_camera_specs(path: str | Path) -> dict[str, CameraSpec]:
     fourcc = _normalize_fourcc(capture.get("format", "mjpg"))
     specs: dict[str, CameraSpec] = {}
     for name, item in data["cameras"].items():
+        for field in ("T_world_from_optical", "T_tool_from_optical"):
+            if item.get(field) is not None:
+                _validate_rigid(name, item[field], field)
         specs[name] = CameraSpec(
             name=name,
             device=str(item["device"]),
@@ -127,7 +170,7 @@ class RealCameraSource:
                 depth_m=None,
                 intrinsic_K=(
                     None
-                    if spec.intrinsic_K is None
+                    if spec.intrinsic_K is None or world_from_optical is None
                     else np.asarray(spec.intrinsic_K, dtype=float)
                 ),
                 T_world_from_optical=world_from_optical,

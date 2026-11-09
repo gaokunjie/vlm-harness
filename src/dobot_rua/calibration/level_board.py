@@ -40,6 +40,18 @@ def _rot_z(angle_rad: float) -> np.ndarray:
     return Rotation.from_rotvec([0.0, 0.0, float(angle_rad)]).as_matrix()
 
 
+def _proper_rotation(matrix: np.ndarray, name: str) -> np.ndarray:
+    """Return ``matrix`` if it is a rotation; reject reflections."""
+    rotation = np.asarray(matrix, dtype=float)
+    if rotation.shape != (3, 3) or not np.allclose(
+        rotation.T @ rotation, np.eye(3), atol=1e-6
+    ):
+        raise ValueError(f"{name} must be a proper rotation")
+    if float(np.linalg.det(rotation)) <= 0.0:
+        raise ValueError(f"{name} must be a proper rotation (det <= 0)")
+    return rotation
+
+
 def solve_from_touches(
     rotation_cam_board: np.ndarray,
     base_points: np.ndarray,
@@ -50,8 +62,14 @@ def solve_from_touches(
 
     ``base_points`` are the robot tip positions (m) at each touch, in the same
     order as the touched features' ``camera_points`` (m).
+
+    When ``camera_z_mm`` is given, the returned camera z is measured from the
+    board plane (world z = 0), not from the robot base frame. Add the board
+    plane's z in the robot frame before writing ``cameras.yaml``; this path
+    cannot recover that offset without a TCP model, which is why the front
+    calibration now uses ``tcp_extrinsic.solve_camera_and_tcp``.
     """
-    rotation_cam_board = np.asarray(rotation_cam_board, dtype=float)
+    rotation_cam_board = _proper_rotation(rotation_cam_board, "rotation_cam_board")
     base = np.asarray(base_points, dtype=float)
     camera = np.asarray(camera_points, dtype=float)
     if base.shape != camera.shape or base.ndim != 2 or base.shape[1] != 3:
@@ -60,8 +78,10 @@ def solve_from_touches(
         raise ValueError("at least two touch points are required")
 
     # The board's own +z points away from the camera, i.e. down in the base
-    # frame, so its normal enters the model with a flipped sign.
-    flip = np.diag([1.0, 1.0, -1.0])
+    # frame. Turning it back up is a rigid 180 deg rotation about x (flip y
+    # and z). Flipping only z would be a reflection and would produce a
+    # det(R) = -1 "camera pose" that mirrors every projected point.
+    flip = np.diag([1.0, -1.0, -1.0])
     v = np.array([flip @ (rotation_cam_board.T @ point) for point in camera])
 
     def cost(yaw: float) -> float:
@@ -94,3 +114,55 @@ def solve_from_touches(
         rms_mm=float(np.sqrt(np.mean(residuals**2))),
         residuals_mm=residuals,
     )
+
+
+def predict_base_points(
+    solution: LevelBoardSolution, camera_points_m: np.ndarray
+) -> np.ndarray:
+    """Map camera-frame points to the base frame with a solved camera pose."""
+    camera = np.asarray(camera_points_m, dtype=float)
+    if camera.ndim != 2 or camera.shape[1] != 3:
+        raise ValueError("camera points must be an Nx3 array")
+    return camera @ solution.rotation_cam_base + solution.camera_position
+
+
+def held_out_errors_mm(
+    solution: LevelBoardSolution,
+    camera_points_m: np.ndarray,
+    base_points_m: np.ndarray,
+) -> np.ndarray:
+    """Per-point held-out error (mm) between predicted and touched base points."""
+    predicted = predict_base_points(solution, camera_points_m)
+    base = np.asarray(base_points_m, dtype=float)
+    if predicted.shape != base.shape:
+        raise ValueError("camera and base points must agree in count")
+    return np.linalg.norm(predicted - base, axis=1) * 1000.0
+
+
+def holdout_indices(count: int, holdout: int) -> list[int]:
+    """Choose ``holdout`` interior indices, spread evenly over ``count`` points.
+
+    The indices are deterministic and unique, so a calibration run is
+    reproducible. The first and last touches are kept for the fit when
+    possible, which preserves the workspace coverage of the solved pose.
+    """
+    count = int(count)
+    holdout = int(holdout)
+    if holdout < 0:
+        raise ValueError("holdout must be non-negative")
+    if holdout == 0:
+        return []
+    if holdout >= count:
+        raise ValueError("holdout must be smaller than the touch count")
+    raw = np.linspace(0, count - 1, holdout + 2)[1:-1]
+    selected = sorted({int(round(value)) for value in raw})
+    if len(selected) < holdout:
+        for value in range(1, count - 1):
+            if value not in selected:
+                selected.append(value)
+                if len(selected) == holdout:
+                    break
+        selected = sorted(selected)
+    if len(selected) < holdout:
+        raise ValueError("could not select that many distinct holdout indices")
+    return selected[:holdout]

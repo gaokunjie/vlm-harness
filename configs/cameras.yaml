@@ -76,7 +76,17 @@ cameras:
     - 720
     - 1280
     calibration_date: '2026-11-08'
-    T_world_from_optical:
+    calibration_status: INVALID
+    calibration_note: DO NOT USE. This matrix was produced from the stale 5-touch
+      session (25.39 mm fit residual, no usable holdout) during a debugging run. The
+      robot base moved; discard it and re-calibrate after homing with a fixed board
+      and 8-10 fresh cup-tip touches.
+    tip_length_mm: 66.6
+    tip_length_measured_at: '2026-11-09'
+    tip_length_note: Vertical distance from the flange reference plane (the end mounting
+      face, manual figure 3.10) to the suction-cup lip. The cup is vertical and centred
+      on j4, so tip xy = flange xy and tip z = flange z - 66.6.
+    T_world_from_optical_invalid_reflection_2026-11-08:
     - - 0.892164684343855
       - 0.4513969656844496
       - 0.01682127761204302
@@ -93,11 +103,55 @@ cameras:
       - 0.0
       - 0.0
       - 1.0
-    calibration_mode: level_board_two_touch
-    touch_residual_mm: 17.546
-    touch_points: 2
-    board_reprojection_px: 1.221
-    camera_height_mm: 331.22
+    calibration_mode: ee_marker_sweep
+    touch_residual_mm: 25.39
+    touch_points: 5
+    board_reprojection_px: 0.894
+    camera_height_mm: 331.81
+    T_world_from_optical_invalid_stale_2026-11-09:
+    - - -0.9997732342928057
+      - 0.00786965935717983
+      - 0.01978758331137506
+      - 0.19044757001573
+    - - 0.008710278237549003
+      - 0.999047351867665
+      - 0.042761194782543054
+      - -0.0141069979419076
+    - - -0.019432216670445417
+      - 0.04292385336625847
+      - -0.9988893491110339
+      - 0.24250295202916666
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+    holdout_points: 0
+    holdout_error_mm: null
+    holdout_max_mm: null
+    T_world_from_optical:
+    - - -0.9997872144044169
+      - 0.014680021889480139
+      - -0.014492165841609738
+      - 0.18982644935997622
+    - - 0.013832819038142636
+      - 0.9982827407875627
+      - 0.056922952867271656
+      - -0.010782367282982229
+    - - 0.015302909230415461
+      - 0.05671037297528571
+      - -0.9982733866862772
+      - 0.17714973558946953
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
+    reprojection_rms_px: 14.621
+    reprojection_max_px: 24.008
+    marker_offset_mm:
+    - -2.612
+    - -0.41
+    - 0.0
+    poses: 13
   side:
     device: /dev/video4
     usb_port: usb-0000:00:14.0-4

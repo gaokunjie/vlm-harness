@@ -56,6 +56,19 @@ v4l2-ctl --list-devices
 4. 桌面高度、块尺寸、吸盘尖端 TCP。
 5. 黑线交点 A、红线交点 B 是否都在 front FOV 和机械臂可达域内。
 
+## 2a. 回零固定动作（必须）
+
+每次上电/回零都必须走同一条路径：厂家 `SetHOMECmd` 回零 → **j4 逆时针旋转 88° 并锁住关节角**。
+
+```bash
+python scripts/home_robot.py
+```
+
+- 规则已写入 `configs/robot_limits.yaml` 的 `post_home_j4_offset_deg: 88.0`；
+- `DobotRobot.home()` 强制执行“回零 + j4 +88°，之后保持”；
+- 88° 是为 j4 `[-90, 90]` 限位留 2° 安全余量；吸盘轴对称，j4 不改变吸盘尖位置；
+- 后续标定扫位姿必须用**关节空间**命令固定 j4=88，不要用 Cartesian `r`（固件会按 `j4 = r − j1` 改 j4）。
+
 ## 2b. 真机只读 server（已完成一次）
 
 ```bash
@@ -85,6 +98,8 @@ wrist 之前用大板得到 provisional 内参（RMS 3.36 px），请用小板�
 ## 3. 标定
 
 ### 3.0 front/side 外参：触碰法（推荐）
+
+> **2026-11-09 更新**：`configs/cameras.yaml` 里原先的 front `T_world_from_optical` 是反射（`det = -1`），已作废并重命名。前视外参不要再用 `annotate_reachability --save`；用 `finish_front_extrinsic.py prepare/record/solve`（已知 `tip_length_mm=66.6`、板约定 `Rx(180)`、默认 `--holdout 2`、残差/留出 3 mm 硬门限；`--force` 仅调试）。底座被移动过；先回零，再重标。
 
 ```bash
 python scripts/calibrate_cameras_touch.py --cameras front,side
@@ -157,6 +172,7 @@ python scripts/measure_targets.py
 ## 4. 真机 adapter smoke
 
 1. 用 `DobotRobot` + 真实相机源构造 `DobotAdapter`；**必须传 `fk_params=load_fk(...)` 和 `safety_limits=SafetyLimits.from_yaml(...)`**，否则 adapter 只查 x/y/z 包围盒，不查关节可达性。
+   - 吸盘尖偏移用 `AdapterConfig(tip_length_mm=66.6)`（mm，竖直标量）；`read_state` 现在报吸盘尖 = 法兰 − (0,0,L)，`step_pose` 收吸盘尖目标并下发给法兰 = 目标 + (0,0,L)；`capture()` 的 wrist 外参仍用三轴法兰系。`tip_length_mm` 从 `configs/cameras.yaml` 的 `front.tip_length_mm` 读取。
 2. 工具朝向按“朝下”四元数 `(0,1,0,0)` 上报；`move` 目标姿态必须复制实测姿态，偏离超过 0.35 rad 会被拒绝。
 3. 先只做 `read_state` / `capture` / 单步小位移 / 吸盘 ON-OFF。
 3. 确认：

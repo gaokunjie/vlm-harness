@@ -22,3 +22,8 @@ ready_tolerance_deg: 1.0
 home_speed_pct: 20        # 仅手动回零备用；厂家 SetHOMECmd 使用固件内置速度
 home_tolerance_deg: 1.0   # 到位判定误差
 home_timeout_s: 120       # 厂家回零会展开扫掠，最长可能 120s
+
+# 每次回零后，j4 逆时针旋转该角度并保持（锁关节角）。
+# 88° 留 2° 安全余量（j4 限位 ±90°）；吸盘轴对称，不影响末端位置。
+# 由 src/dobot_rua/hardware/dobot.py 的 DobotRobot.home() 强制执行。
+post_home_j4_offset_deg: 88.0

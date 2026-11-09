@@ -1,10 +1,10 @@
-# 由 scripts/calibrate_fk.py 生成，勿手改
-a: 157.738664
-h: 202.124943
-L1: -245.226785
-L2: 145.899572
-c2_deg: 108.703732
-c3_deg: 0.980293
-samples: 27
-holdout_median_mm: 1.022
-holdout_max_mm: 2.121
+# 由 scripts/fit_fk.py 生成，勿手改；回零后的固件位姿为参考
+a: 3.4e-05
+h: -6.2e-05
+L1: 134.999984
+L2: 147.000013
+c2_deg: 90.000015
+c3_deg: -8.0e-06
+samples: 18
+holdout_median_mm: 0.0
+holdout_max_mm: 0.0

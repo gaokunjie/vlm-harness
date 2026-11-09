@@ -99,6 +99,10 @@ def tool_specs() -> list[ToolSpec]:
     ]
 
 
+class FrontCameraUncalibrated(RuntimeError):
+    """The front camera has no usable world extrinsic; fail closed."""
+
+
 class PerceptionTools(ToolProvider):
     provider_id = "perception"
 
@@ -120,13 +124,44 @@ class PerceptionTools(ToolProvider):
 
     def _front_frame(self, snapshot: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         camera = snapshot["cameras"]["front"]
+        extrinsic_value = camera.get("T_world_from_optical")
+        if extrinsic_value is None:
+            raise FrontCameraUncalibrated(
+                "front camera is not calibrated: T_world_from_optical is missing; "
+                "run scripts/finish_front_extrinsic.py solve before using world coordinates"
+            )
+        extrinsic = np.asarray(extrinsic_value, dtype=float)
+        if extrinsic.shape != (4, 4):
+            raise FrontCameraUncalibrated(
+                "front camera extrinsic must be a 4x4 homogeneous transform"
+            )
+        rotation = extrinsic[:3, :3]
+        if not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-6) or float(
+            np.linalg.det(rotation)
+        ) <= 0.0:
+            raise FrontCameraUncalibrated(
+                "front camera extrinsic is not a proper rigid transform; recalibrate "
+                "before using world coordinates"
+            )
         path = self.episode.artifact_mirror.local_path(camera["rgb"])
         image = cv2.imread(str(path))
         if image is None:
             raise RuntimeError(f"could not read front camera image at {path}")
         intrinsic = np.asarray(camera["intrinsic_K"], dtype=float)
-        extrinsic = np.asarray(camera["T_world_from_optical"], dtype=float)
         return image, intrinsic, extrinsic
+
+    def _front_or_error(self, snapshot: dict):
+        try:
+            return self._front_frame(snapshot), None
+        except FrontCameraUncalibrated as error:
+            return None, ToolOutput(
+                success=False,
+                error=str(error),
+                extra={
+                    "snapshot_id": snapshot.get("snapshot_id"),
+                    "mock": self._is_mock(),
+                },
+            )
 
     def _metadata(self) -> dict:
         return self.episode.description.environment.metadata
@@ -140,7 +175,10 @@ class PerceptionTools(ToolProvider):
     # ---- handlers ----
     def list_objects(self, snapshot_id: str | None = None) -> ToolOutput:
         snapshot = self._snapshot(snapshot_id)
-        image, intrinsic, extrinsic = self._front_frame(snapshot)
+        frame, error = self._front_or_error(snapshot)
+        if error is not None:
+            return error
+        image, intrinsic, extrinsic = frame
         blocks = detect_blocks(image, intrinsic, extrinsic, self._plane_z())
         return ToolOutput(
             extra={
@@ -154,7 +192,10 @@ class PerceptionTools(ToolProvider):
         self, line_color: str, snapshot_id: str | None = None
     ) -> ToolOutput:
         snapshot = self._snapshot(snapshot_id)
-        image, intrinsic, extrinsic = self._front_frame(snapshot)
+        frame, error = self._front_or_error(snapshot)
+        if error is not None:
+            return error
+        image, intrinsic, extrinsic = frame
         result = detect_line_intersection(
             image, intrinsic, extrinsic, self._plane_z(), line_color
         )
@@ -217,7 +258,10 @@ class PerceptionTools(ToolProvider):
                 }
             )
         snapshot = self._snapshot(snapshot_id)
-        image, intrinsic, extrinsic = self._front_frame(snapshot)
+        frame, error = self._front_or_error(snapshot)
+        if error is not None:
+            return error
+        image, intrinsic, extrinsic = frame
         blocks = detect_blocks(image, intrinsic, extrinsic, self._plane_z())
         return ToolOutput(
             extra={

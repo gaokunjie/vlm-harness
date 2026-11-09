@@ -53,9 +53,14 @@ class AdapterConfig:
     orientation_tolerance_rad: float = 0.35
     x_range_mm: tuple[float, float] = (-300.0, 300.0)
     y_range_mm: tuple[float, float] = (-300.0, 300.0)
-    z_range_mm: tuple[float, float] = (-30.0, 300.0)
+    z_range_mm: tuple[float, float] = (-200.0, 300.0)
     cameras: tuple[str, ...] = ("front", "side", "wrist")
     has_calibration: bool = True
+    # Vertical distance from the flange reference plane to the suction-cup
+    # lip. The cup is vertical and centred on j4, so the tip xy equals the
+    # flange xy and only z changes: tip = flange - (0, 0, tip_length_mm).
+    # This is a scalar, not a 3-D tool-frame offset.
+    tip_length_mm: float = 0.0
 
 
 def _tool_quaternion(r_deg: float) -> tuple[float, float, float, float]:
@@ -84,11 +89,18 @@ class DobotAdapter:
         self.robot = robot
         self.camera_source = camera_source
         self.config = config
+        source_calibration = getattr(camera_source, "has_calibration", None)
+        self._has_calibration = (
+            bool(config.has_calibration) and source_calibration is not False
+        )
         self.episode_id = episode_id
         self.instruction = instruction
         self.metadata = dict(metadata or {})
         self.safety_limits = safety_limits
         self.fk_params = fk_params
+        self._tip_length_mm = float(self.config.tip_length_mm)
+        if self._tip_length_mm < 0.0:
+            raise ValueError("tip_length_mm must be non-negative")
         self.success_fn = success_fn
         self._state_version = 0
         self._native_steps = 0
@@ -119,7 +131,7 @@ class DobotAdapter:
             ],
             cameras=[
                 CameraDescription(name=name, role=("wrist" if name == "wrist" else "scene"),
-                                  has_depth=False, has_calibration=self.config.has_calibration)
+                                  has_depth=False, has_calibration=self._has_calibration)
                 for name in self.config.cameras
             ],
             control_frequency_hz=self.config.control_hz,
@@ -131,6 +143,7 @@ class DobotAdapter:
                 "instruction": self.instruction,
                 "gripper_semantics": "grasp=suction ON (0), release=suction OFF (1)",
                 "coordinate_frame": "world metres; x forward, y left, z up; wxyz quaternions",
+                "tip_length_mm": self._tip_length_mm,
                 **self.metadata,
             },
         )
@@ -148,11 +161,28 @@ class DobotAdapter:
             ended=self._finished or self._outcome is not None,
         )
 
+    def _tip_from_robot(self, robot: RobotState) -> np.ndarray:
+        """Map the firmware's flange position to the vertical suction-cup tip."""
+        flange = np.array([robot.x_mm, robot.y_mm, robot.z_mm], dtype=float)
+        return flange - np.array([0.0, 0.0, self._tip_length_mm])
+
+    def _flange_for_tip(self, tip_mm: np.ndarray) -> np.ndarray:
+        """Map a desired suction-tip position to the flange command.
+
+        The cup is vertical and centred on j4, so this is only a vertical
+        translation: flange = tip + (0, 0, tip_length_mm).
+        """
+        return np.asarray(tip_mm, dtype=float) + np.array(
+            [0.0, 0.0, self._tip_length_mm]
+        )
+
     def _arm_state(self, robot: RobotState) -> ArmState:
         gripper = 0.0 if robot.suction_on else 1.0
+        tip = self._tip_from_robot(robot)
+        flange = [robot.x_mm, robot.y_mm, robot.z_mm]
         return ArmState(
             control_pose=Pose(
-                position=(robot.x_mm / 1000.0, robot.y_mm / 1000.0, robot.z_mm / 1000.0),
+                position=(tip[0] / 1000.0, tip[1] / 1000.0, tip[2] / 1000.0),
                 quaternion=_tool_quaternion(robot.r_deg),
             ),
             joints=[
@@ -161,35 +191,46 @@ class DobotAdapter:
             ],
             gripper=gripper,
             gripper_command=gripper,
-            metadata={"measured_xyz_mm": [robot.x_mm, robot.y_mm, robot.z_mm]},
+            metadata={
+                "measured_xyz_mm": flange,
+                "flange_xyz_mm": flange,
+                "tip_xyz_mm": tip.tolist(),
+            },
         )
 
     def _check_pose(
         self,
         position_m: tuple[float, float, float],
         quaternion_wxyz: tuple[float, float, float, float],
-    ) -> None:
-        x_mm, y_mm, z_mm = (float(value) * 1000.0 for value in position_m)
+    ) -> np.ndarray:
+        """Validate a suction-tip target and return the flange command."""
+        tip_mm = np.array([float(value) * 1000.0 for value in position_m], dtype=float)
         for value, (low, high), axis in (
-            (x_mm, self.config.x_range_mm, "x"),
-            (y_mm, self.config.y_range_mm, "y"),
-            (z_mm, self.config.z_range_mm, "z"),
+            (tip_mm[0], self.config.x_range_mm, "x"),
+            (tip_mm[1], self.config.y_range_mm, "y"),
+            (tip_mm[2], self.config.z_range_mm, "z"),
         ):
             if not (low <= value <= high):
                 raise RequestRejected(f"{axis}={value:.1f} mm outside workspace [{low}, {high}]")
 
         current = self.robot.read_state()
+        flange_mm = self._flange_for_tip(tip_mm)
+        target_flange = (
+            float(flange_mm[0]),
+            float(flange_mm[1]),
+            float(flange_mm[2]),
+        )
         previous = (current.x_mm, current.y_mm, current.z_mm)
         if self.safety_limits is not None:
             try:
                 self.safety_limits.check_step(
-                    previous, (x_mm, y_mm, z_mm), max_step_mm=self.config.max_step_mm
+                    previous, target_flange, max_step_mm=self.config.max_step_mm
                 )
             except SafetyError as error:
                 raise RequestRejected(str(error)) from error
         else:
             distance = float(
-                np.linalg.norm(np.array([x_mm, y_mm, z_mm]) - np.array(previous))
+                np.linalg.norm(np.array(target_flange) - np.array(previous))
             )
             if distance > self.config.max_step_mm:
                 raise RequestRejected(
@@ -199,16 +240,16 @@ class DobotAdapter:
         if self.fk_params is not None and self.safety_limits is not None:
             solutions = inverse_kinematics(
                 self.fk_params,
-                x_mm,
-                y_mm,
-                z_mm,
+                target_flange[0],
+                target_flange[1],
+                target_flange[2],
                 self.safety_limits.joint_limits_deg,
                 margin_deg=2.0,
             )
             if not solutions:
                 raise RequestRejected(
-                    f"target ({x_mm:.1f}, {y_mm:.1f}, {z_mm:.1f}) is not reachable "
-                    "within the joint limits"
+                    f"target tip ({tip_mm[0]:.1f}, {tip_mm[1]:.1f}, "
+                    f"{tip_mm[2]:.1f}) is not reachable within the joint limits"
                 )
 
         w, x, y, z = (float(value) for value in quaternion_wxyz)
@@ -221,6 +262,7 @@ class DobotAdapter:
                 f"orientation change {angle:.3f} rad exceeds the fixed-rotation tolerance "
                 f"{self.config.orientation_tolerance_rad:.3f} rad"
             )
+        return flange_mm
 
     def validate_commands(self, commands: list[Any], mode: str) -> None:
         if mode != "pose":
@@ -240,19 +282,20 @@ class DobotAdapter:
         if self._finished or self._outcome is not None:
             raise RequestRejected("episode has ended")
         target = command.arms["arm"]
-        x_mm, y_mm, z_mm = (float(value) * 1000.0 for value in target.pose.position)
+        tip_mm = np.array(
+            [float(value) * 1000.0 for value in target.pose.position], dtype=float
+        )
+        flange_mm = self._flange_for_tip(tip_mm)
         suction_on = float(target.gripper) <= 0.5
         self.robot.set_suction(suction_on)
-        self.robot.move_pose(x_mm, y_mm, z_mm, r_deg=0.0)
+        self.robot.move_pose(
+            float(flange_mm[0]), float(flange_mm[1]), float(flange_mm[2]), r_deg=0.0
+        )
         self._state_version += 1
         self._native_steps += 1
         measured = self.robot.read_state()
-        error_mm = float(
-            np.linalg.norm(
-                np.array([x_mm, y_mm, z_mm])
-                - np.array([measured.x_mm, measured.y_mm, measured.z_mm])
-            )
-        )
+        measured_tip = self._tip_from_robot(measured)
+        error_mm = float(np.linalg.norm(tip_mm - measured_tip))
         stop_reason = "arrived" if error_mm <= self.config.position_tolerance_mm else "stalled"
         return StepReceipt(
             accepted=True,
@@ -261,8 +304,10 @@ class DobotAdapter:
                 "stop_reason": stop_reason,
                 "position_error_mm": error_mm,
                 "executed_steps": 1,
-                "target_xyz_mm": [x_mm, y_mm, z_mm],
+                "target_xyz_mm": tip_mm.tolist(),
+                "flange_command_mm": flange_mm.tolist(),
                 "measured_xyz_mm": [measured.x_mm, measured.y_mm, measured.z_mm],
+                "measured_tip_mm": measured_tip.tolist(),
             },
         )
 
@@ -291,7 +336,8 @@ class DobotAdapter:
         robot = self.robot.read_state()
         if self.fk_params is not None:
             # The wrist camera is rigidly mounted on the three-axis part of the
-            # arm; j4 does not rotate it.
+            # arm; j4 does not rotate it. Its hand-eye calibration is expressed
+            # in this flange frame, not in the suction-tip frame.
             tool_pose = three_axis_frame(
                 self.fk_params,
                 robot.j1_deg,

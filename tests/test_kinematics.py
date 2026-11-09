@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from dobot_rua.kinematics import (
+    FKParams,
     forward_kinematics,
     three_axis_frame,
     inverse_kinematics,
@@ -9,6 +10,20 @@ from dobot_rua.kinematics import (
     load_limits,
     within_limits,
 )
+
+
+def test_fk_uses_the_vendor_convention():
+    # The firmware reports absolute forearm angles with both joint angles
+    # mirrored: r = L1*sin(j2) + L2*cos(j3), z = L1*cos(j2) - L2*sin(j3).
+    # The two reference poses below come from robot_limits.yaml and the
+    # post-homing firmware readings.
+    params = FKParams(a=0.0, h=0.0, l1=135.0, l2=147.0, c2_deg=90.0, c3_deg=0.0)
+    assert np.allclose(
+        forward_kinematics(params, 0.0, 45.0, 45.0), [199.4, 0.0, -8.49], atol=0.05
+    )
+    assert np.allclose(
+        forward_kinematics(params, 0.0, 10.88, 49.98), [120.0, 0.0, 20.0], atol=0.05
+    )
 
 
 def test_fk_matches_ready_pose():

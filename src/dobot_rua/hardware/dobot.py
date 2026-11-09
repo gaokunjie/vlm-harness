@@ -22,6 +22,84 @@ class DobotRobot:
 
             self._driver = Dobot(port=self.port, verbose=False)
 
+    def home(
+        self,
+        home_deg: tuple[float, float, float, float] = (0.0, 45.0, 45.0, 0.0),
+        post_home_j4_offset_deg: float = 88.0,
+        timeout_s: float = 120.0,
+        tolerance_deg: float = 1.0,
+        speed_pct: float = 20.0,
+    ) -> RobotState:
+        """Run the vendor HOME command, then rotate j4 CCW and keep it there.
+
+        The suction cup is axisymmetric, so the post-home j4 offset does not
+        move the tip.  Applying it on every home keeps the wrist-camera and
+        calibration-board orientation repeatable.  The offset is persisted in
+        ``configs/robot_limits.yaml`` (``post_home_j4_offset_deg``).
+        """
+        if self._driver is None:
+            raise RuntimeError("robot is not connected")
+
+        from pydobot.enums import PTPMode
+        from pydobot.enums.CommunicationProtocolIDs import CommunicationProtocolIDs
+        from pydobot.enums.ControlValues import ControlValues
+        from pydobot.message import Message
+
+        message = Message()
+        message.id = CommunicationProtocolIDs.SET_HOME_CMD
+        message.ctrl = ControlValues.THREE
+        message.params = bytearray(struct.pack("f", 0.0))
+        self._driver._send_command(message)
+
+        deadline = time.monotonic() + float(timeout_s)
+        stable = 0
+        while time.monotonic() < deadline:
+            state = self.read_state()
+            joints = (state.j1_deg, state.j2_deg, state.j3_deg, state.j4_deg)
+            if max(abs(a - b) for a, b in zip(joints, home_deg)) <= tolerance_deg:
+                stable += 1
+                if stable >= 5:
+                    break
+            else:
+                stable = 0
+            time.sleep(0.2)
+        else:
+            raise TimeoutError(
+                f"home did not reach {home_deg} within {timeout_s:.0f} s"
+            )
+
+        target_j4 = float(home_deg[3]) + float(post_home_j4_offset_deg)
+        if not (-90.0 <= target_j4 <= 90.0):
+            raise ValueError(
+                f"post-home j4={target_j4:.2f} outside the configured [-90, 90] range"
+            )
+        self._driver.speed(float(speed_pct), float(speed_pct))
+        self._driver._set_ptp_cmd(
+            float(home_deg[0]),
+            float(home_deg[1]),
+            float(home_deg[2]),
+            target_j4,
+            mode=PTPMode.MOVJ_ANGLE,
+            wait=True,
+        )
+
+        deadline = time.monotonic() + 15.0
+        stable = 0
+        while time.monotonic() < deadline:
+            state = self.read_state()
+            if abs(state.j4_deg - target_j4) <= tolerance_deg:
+                stable += 1
+                if stable >= 5:
+                    break
+            else:
+                stable = 0
+            time.sleep(0.2)
+        else:
+            raise TimeoutError(
+                f"post-home j4 did not reach {target_j4:.2f} within 15 s"
+            )
+        return self.read_state()
+
     def set_speed(self, velocity: int, acceleration: int) -> None:
         if self._driver is None:
             raise RuntimeError("robot is not connected")

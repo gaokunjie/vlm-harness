@@ -24,12 +24,18 @@ import yaml
 from scipy.spatial.transform import Rotation
 
 from dobot_rua.calibration.charuco import make_board
-from dobot_rua.calibration.level_board import camera_height_mm, solve_from_touches
+from dobot_rua.calibration.level_board import (
+    camera_height_mm,
+    held_out_errors_mm,
+    holdout_indices,
+    solve_from_touches,
+)
 from dobot_rua.calibration.touch import (
     camera_board_pose,
     marker_center,
     reprojection_rms,
 )
+from dobot_rua.hardware.cameras import load_tip_length_mm
 from dobot_rua.hardware.dobot import DobotRobot
 from dobot_rua.kinematics import forward_kinematics, load_fk
 
@@ -40,9 +46,38 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--camera-config", type=Path, default=Path("configs/cameras.yaml"))
     p.add_argument("--session", type=Path, default=Path("audit/touch_session.json"))
     p.add_argument("--robot-port", default="/dev/dobot_follower")
-    p.add_argument("--board-preset", choices=("wrist", "large"), default="wrist")
+    p.add_argument("--board-preset", choices=("wrist", "large"), default="large")
     p.add_argument("--marker", type=int, help="marker id touched (record)")
     p.add_argument("--board-z-mm", type=float, default=1.0)
+    p.add_argument(
+        "--max-residual-mm",
+        type=float,
+        default=3.0,
+        help="refuse to save a solve whose touch RMS exceeds this",
+    )
+    p.add_argument(
+        "--tip-length-mm",
+        type=float,
+        default=None,
+        help="override the flange-to-suction-cup-lip distance in the camera config",
+    )
+    p.add_argument(
+        "--holdout",
+        type=int,
+        default=2,
+        help="number of touches held out for validation; 0 disables",
+    )
+    p.add_argument(
+        "--max-holdout-mm",
+        type=float,
+        default=3.0,
+        help="refuse to save a solve whose held-out error exceeds this",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="debug only: allow saving above the 3 mm residual/held-out gates",
+    )
     p.add_argument(
         "--prefer",
         choices=("far", "arm"),
@@ -217,46 +252,125 @@ def record(args) -> int:
 def solve(args) -> int:
     session = json.loads(args.session.read_text(encoding="utf-8"))
     touches = session["touches"]
-    if len(touches) < 2:
-        print("need at least two recorded touches")
-        return 1
-    base = np.array([t["base_mm"] for t in touches], dtype=float) / 1000.0
-    camera = np.array(
-        [session["markers"][str(t["marker"])]["camera_mm"] for t in touches],
-        dtype=float,
-    ) / 1000.0
-    solution = solve_from_touches(
-        np.asarray(session["rotation_cam_board"], dtype=float),
-        base,
-        camera,
-        camera_z_mm=float(session["camera_height_mm"]),
-    )
-    print(f"touch fit: RMS {solution.rms_mm:.2f} mm  per point {np.round(solution.residuals_mm, 2)}")
-    print(f"camera yaw about vertical: {np.degrees(solution.yaw_rad):.1f} deg")
-    print(
-        f"camera position (mm): {np.round(solution.camera_position * 1000.0, 1)}"
-    )
-    print(
-        f"height from board plane {session['camera_height_mm']:.1f} mm vs "
-        f"from touches {solution.camera_position[2] * 1000.0:.1f} mm"
-    )
-    if solution.rms_mm > 8.0:
-        print("touch residual too large; not saving")
+    if len(touches) < 3:
+        print("need at least three touched markers on the fixed board")
         return 1
 
-    rotation_base_cam = solution.rotation_cam_base.T
+    tip_length_mm = (
+        float(args.tip_length_mm)
+        if args.tip_length_mm is not None
+        else load_tip_length_mm(args.camera_config)
+    )
+    if tip_length_mm < 0.0:
+        print("tip length must be non-negative")
+        return 1
+    # The 3 mm gates are safety limits: --max-* may tighten them, but only
+    # --force can loosen them. A stale 25 mm solve must never be saved as valid.
+    residual_limit = (
+        args.max_residual_mm if args.force else min(args.max_residual_mm, 3.0)
+    )
+    holdout_limit = (
+        args.max_holdout_mm if args.force else min(args.max_holdout_mm, 3.0)
+    )
+
+    count = len(touches)
+    try:
+        held = holdout_indices(count, args.holdout)
+    except ValueError as error:
+        print(f"holdout: {error}")
+        return 1
+    fit = [index for index in range(count) if index not in held]
+    if len(fit) < 3:
+        print(
+            f"only {len(fit)} fit points after holding out {len(held)}; "
+            "need at least 3"
+        )
+        return 1
+
+    camera_points_m = np.array(
+        [
+            session["markers"][str(t["marker"])]["camera_mm"]
+            for t in touches
+        ],
+        dtype=float,
+    ) / 1000.0
+    # record() stores the firmware/FK flange point; the cup tip is the flange
+    # minus the vertical tip length. The tip xy equals the flange xy.
+    flange_m = np.array([t["base_mm"] for t in touches], dtype=float) / 1000.0
+    tip_m = flange_m - np.array([0.0, 0.0, tip_length_mm / 1000.0])
+
+    solution = solve_from_touches(
+        np.asarray(session["rotation_cam_board"], dtype=float),
+        tip_m[fit],
+        camera_points_m[fit],
+    )
+    held_errors_mm = None
+    if held:
+        held_errors_mm = held_out_errors_mm(
+            solution, camera_points_m[held], tip_m[held]
+        )
     transform = np.eye(4)
-    transform[:3, :3] = rotation_base_cam
+    transform[:3, :3] = solution.rotation_cam_base.T
     transform[:3, 3] = solution.camera_position
+
+    print(
+        f"fit touches {len(fit)}  residual RMS {solution.rms_mm:.2f} mm  "
+        f"per point {np.round(solution.residuals_mm, 2)}"
+    )
+    if held_errors_mm is not None:
+        print(
+            f"held-out {len(held)} points  errors {np.round(held_errors_mm, 2)} mm  "
+            f"max {held_errors_mm.max():.2f} mm"
+        )
+    print(
+        f"board yaw {np.degrees(solution.yaw_rad):.1f} deg  "
+        f"camera position (mm) {np.round(solution.camera_position * 1000.0, 1)}"
+    )
+    if solution.rms_mm > residual_limit:
+        print(
+            f"touch residual {solution.rms_mm:.2f} mm exceeds "
+            f"{residual_limit:.2f} mm; not saving"
+        )
+        return 1
+    if held_errors_mm is not None and float(held_errors_mm.max()) > holdout_limit:
+        print(
+            f"held-out error {held_errors_mm.max():.2f} mm exceeds "
+            f"{holdout_limit:.2f} mm; not saving"
+        )
+        return 1
+    if float(np.linalg.det(transform[:3, :3])) <= 0.0:
+        print("solved rotation is not proper; not saving")
+        return 1
+    camera_z_mm = float(solution.camera_position[2] * 1000.0)
+    if not (50.0 < camera_z_mm < 1000.0):
+        print(f"camera z={camera_z_mm:.1f} mm is implausible; not saving")
+        return 1
+
+    if args.force:
+        print(
+            "WARNING: --force enabled; saving a calibration above the 3 mm "
+            "gates. Do not use it for DOE."
+        )
     print("T_world_from_optical =\n", np.array2string(transform, precision=6))
 
     config = yaml.safe_load(args.camera_config.read_text(encoding="utf-8"))
     front = config["cameras"]["front"]
     front["T_world_from_optical"] = transform.tolist()
+    front.pop("tcp_mm", None)
+    front["tip_length_mm"] = round(float(tip_length_mm), 2)
     front["calibration_date"] = time.strftime("%Y-%m-%d")
-    front["calibration_mode"] = "level_board_two_touch"
+    front["calibration_mode"] = "level_board_vertical_tip"
+    front["calibration_status"] = "valid"
+    front.pop("calibration_note", None)
     front["touch_residual_mm"] = round(solution.rms_mm, 3)
-    front["touch_points"] = len(touches)
+    front["touch_points"] = len(fit)
+    front["holdout_points"] = len(held)
+    front["holdout_error_mm"] = (
+        None if held_errors_mm is None else round(float(np.mean(held_errors_mm)), 3)
+    )
+    front["holdout_max_mm"] = (
+        None if held_errors_mm is None else round(float(np.max(held_errors_mm)), 3)
+    )
     front["board_reprojection_px"] = round(session["reprojection_rms_px"], 3)
     front["camera_height_mm"] = round(session["camera_height_mm"], 2)
     args.camera_config.write_text(
