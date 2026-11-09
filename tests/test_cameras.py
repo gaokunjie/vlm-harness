@@ -297,3 +297,21 @@ def test_capture_sets_planar_calibration(tmp_path):
     frame = source.capture(["front"])["front"]
     assert frame.calibration["status"] == "VALID"
     assert np.allclose(frame.T_world_from_optical, T)
+
+
+def test_provisional_planar_loads(tmp_path):
+    T = np.eye(4)
+    T[0, 3] = 0.123
+    path = _planar_config(
+        tmp_path,
+        {
+            "T_world_from_optical": T.tolist(),
+            "H_table": np.eye(3).tolist(),
+            "H_top": np.eye(3).tolist(),
+        },
+        status="PROVISIONAL",
+    )
+    spec = load_camera_specs(path)["front"]
+    assert spec.planar is not None
+    assert spec.planar["status"] == "PROVISIONAL"
+    assert RealCameraSource({"front": spec}).has_calibration is True

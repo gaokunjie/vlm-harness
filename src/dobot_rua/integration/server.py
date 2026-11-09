@@ -56,6 +56,13 @@ def prepare(args: argparse.Namespace) -> DobotAdapter:
     robot.connect()
     camera_source = RealCameraSource(load_camera_specs(args.camera_config))
     metadata = _task_metadata(args.task_config)
+    calibration_status = camera_source.specs["front"].calibration_status
+    metadata["calibration_status"] = calibration_status
+    if calibration_status == "PROVISIONAL":
+        print(
+            "WARNING: front calibration is PROVISIONAL; this episode is for "
+            "pipeline/demo only and must not enter the formal DOE"
+        )
     adapter = DobotAdapter(
         robot=robot,
         camera_source=camera_source,

@@ -94,7 +94,9 @@ def load_camera_specs(path: str | Path) -> dict[str, CameraSpec]:
         tool_extrinsic = item.get("T_tool_from_optical")
         planar = None
         valid_planar = (
-            name == "front" and status == "VALID" and isinstance(planar_raw, dict)
+            name == "front"
+            and status in {"VALID", "PROVISIONAL"}
+            and isinstance(planar_raw, dict)
         )
         if valid_planar:
             validate_rigid_transform(
@@ -165,7 +167,7 @@ class RealCameraSource:
                 front.T_world_from_optical is not None
                 or front.T_tool_from_optical is not None
             )
-            and front.calibration_status == "VALID"
+            and front.calibration_status in {"VALID", "PROVISIONAL"}
         )
 
     def _opencv_capture(self, spec: CameraSpec) -> Any:

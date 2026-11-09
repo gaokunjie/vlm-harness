@@ -198,3 +198,14 @@ def test_find_line_intersection_rejects_outside_region(tmp_path):
     ]
     output = PerceptionTools(episode).find_line_intersection("black")
     assert output.success is False
+
+
+def test_provisional_tools_are_marked(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["calibration"]["status"] = "PROVISIONAL"
+    output = PerceptionTools(episode).list_objects()
+    assert output.success is True
+    assert output.extra["calibration_status"] == "PROVISIONAL"
+    assert output.extra["provisional"] is True

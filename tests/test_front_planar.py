@@ -213,3 +213,30 @@ def test_fit_rejects_too_close_planes():
         pass
     else:
         raise AssertionError("too-close planes accepted")
+
+
+def test_provisional_calibration_round_trip(tmp_path):
+    T_gt = np.eye(4)
+    T_gt[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    T_gt[:3, 3] = [0.01, 0.02, 0.30]
+    cal, _ = fit_two_plane(
+        _samples(T_gt),
+        K,
+        DIST,
+        -0.02,
+        0.005,
+        (25.0, 75.0, 0.0),
+        0.025,
+        0.002,
+        {"focus": 350},
+        holdout=2,
+        calibration_status="PROVISIONAL",
+    )
+    assert cal.calibration_status == "PROVISIONAL"
+    path = tmp_path / "cameras.yaml"
+    path.write_text("cameras:\n  front:\n    device: /dev/video2\n", encoding="utf-8")
+    save_planar_calibration(path, "front", cal)
+    loaded = load_planar_calibration(path, "front")
+    assert loaded is not None
+    assert loaded.calibration_status == "PROVISIONAL"
+    assert loaded.calibration_hash == cal.calibration_hash

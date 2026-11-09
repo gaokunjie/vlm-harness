@@ -103,6 +103,7 @@ class PlanarCalibration:
     samples: int
     calibration_hash: str
     measured_at: str
+    calibration_status: str = "VALID"
 
 
 def _json_default(value: Any) -> Any:
@@ -134,6 +135,7 @@ def compute_calibration_hash(calibration: PlanarCalibration) -> str:
         "holdout_max_px": calibration.holdout_max_px,
         "samples": calibration.samples,
         "measured_at": calibration.measured_at,
+        "calibration_status": calibration.calibration_status,
     }
     encoded = json.dumps(fields, sort_keys=True, default=_json_default)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -182,6 +184,7 @@ def fit_two_plane(
     min_marker_count: int = 6,
     max_fit_rmse_px: float = 2.0,
     max_holdout_px: float = 3.0,
+    calibration_status: str = "VALID",
 ) -> tuple[PlanarCalibration, dict[str, Any]]:
     """Fit ``T_world_from_optical`` from samples on two parallel planes."""
     if abs(float(block_top_z_m) - float(table_z_m)) < 0.02:
@@ -276,6 +279,7 @@ def fit_two_plane(
         samples=len(usable),
         calibration_hash="",
         measured_at=measured_at or time.strftime("%Y-%m-%d"),
+        calibration_status=calibration_status,
     )
     calibration = replace(
         calibration, calibration_hash=compute_calibration_hash(calibration)
@@ -309,8 +313,12 @@ def save_planar_calibration(
     camera = cameras.setdefault(camera_name, {})
     camera["intrinsic_K"] = calibration.intrinsic_K.tolist()
     camera["distortion"] = calibration.distortion.tolist()
-    camera["calibration_status"] = "VALID"
-    camera["calibration_mode"] = "two_plane_pnp"
+    camera["calibration_status"] = calibration.calibration_status
+    camera["calibration_mode"] = (
+        "two_plane_pnp_provisional"
+        if calibration.calibration_status == "PROVISIONAL"
+        else "two_plane_pnp"
+    )
     camera["calibration_date"] = calibration.measured_at
     camera["calibration_hash"] = calibration.calibration_hash
     camera["planar"] = {
@@ -323,6 +331,8 @@ def save_planar_calibration(
         "block_height_m": calibration.block_height_m,
         "board_thickness_m": calibration.board_thickness_m,
         "calibrated_region": calibration.calibrated_region.tolist(),
+        "calibration_status": calibration.calibration_status,
+        "provisional": calibration.calibration_status == "PROVISIONAL",
         "camera_controls": dict(calibration.camera_controls),
         "fit_rmse_px": calibration.fit_rmse_px,
         "holdout_max_px": calibration.holdout_max_px,
@@ -346,7 +356,8 @@ def load_planar_calibration(
         return None
     camera = (data.get("cameras") or {}).get(camera_name) or {}
     planar = camera.get("planar")
-    if camera.get("calibration_status") != "VALID" or not isinstance(planar, dict):
+    status = camera.get("calibration_status")
+    if status not in {"VALID", "PROVISIONAL"} or not isinstance(planar, dict):
         return None
     intrinsic = camera.get("intrinsic_K")
     distortion = camera.get("distortion")
@@ -397,6 +408,7 @@ def load_planar_calibration(
             measured_at=str(
                 planar.get("measured_at", camera.get("calibration_date", ""))
             ),
+            calibration_status=str(status),
         )
     except (KeyError, TypeError, ValueError):
         return None

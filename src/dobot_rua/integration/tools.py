@@ -129,10 +129,10 @@ class PerceptionTools(ToolProvider):
         camera = snapshot["cameras"]["front"]
         calibration = camera.get("calibration")
         if calibration is not None:
-            if calibration.get("status") != "VALID":
+            if calibration.get("status") not in {"VALID", "PROVISIONAL"}:
                 raise FrontCameraUncalibrated(
-                    "front camera planar calibration is not VALID; recalibrate "
-                    "before using world coordinates"
+                    "front camera planar calibration is not VALID or PROVISIONAL; "
+                    "recalibrate before using world coordinates"
                 )
         elif not self._is_mock():
             raise FrontCameraUncalibrated(
@@ -185,6 +185,10 @@ class PerceptionTools(ToolProvider):
                 "front camera calibrated_region is missing; recalibrate"
             )
         return np.asarray(region, dtype=float).reshape(-1, 2)
+
+    def _calibration_status(self, snapshot: dict) -> str | None:
+        calibration = snapshot["cameras"]["front"].get("calibration") or {}
+        return calibration.get("status")
 
     def _front_or_error(self, snapshot: dict):
         try:
@@ -248,6 +252,8 @@ class PerceptionTools(ToolProvider):
             extra={
                 "snapshot_id": snapshot["snapshot_id"],
                 "blocks": [asdict(block) for block in blocks],
+                "calibration_status": self._calibration_status(snapshot),
+                "provisional": self._calibration_status(snapshot) == "PROVISIONAL",
                 "mock": self._is_mock(),
             }
         )
@@ -284,6 +290,8 @@ class PerceptionTools(ToolProvider):
                 extra={
                     "snapshot_id": snapshot["snapshot_id"],
                     "intersection_xyz_m": result.intersection_xyz_m,
+                    "calibration_status": self._calibration_status(snapshot),
+                    "provisional": self._calibration_status(snapshot) == "PROVISIONAL",
                     "mock": self._is_mock(),
                 },
             )
@@ -291,6 +299,8 @@ class PerceptionTools(ToolProvider):
             extra={
                 "snapshot_id": snapshot["snapshot_id"],
                 **asdict(result),
+                "calibration_status": self._calibration_status(snapshot),
+                "provisional": self._calibration_status(snapshot) == "PROVISIONAL",
                 "mock": self._is_mock(),
             }
         )
@@ -416,6 +426,8 @@ class PerceptionTools(ToolProvider):
                 "intersections": {
                     color: asdict(result) for color, result in intersections.items()
                 },
+                "calibration_status": self._calibration_status(snapshot),
+                "provisional": self._calibration_status(snapshot) == "PROVISIONAL",
                 "mock": False,
             }
         )

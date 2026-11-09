@@ -385,3 +385,12 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - `DobotRobot.move_joints` 改为 `MOVJ_ANGLE` + 到位稳定轮询；`DobotRobot.home()` 仍执行“回零 + j4 88°”。
 - 离线测试全绿（`pytest -q`）。
 - 待真机：实测 `table_z_m`、`block_height_m`、`board_thickness_m`；刚性衬底/防转；跑标定与 jog 验证；通过后再跑正式 trial。
+
+## 2026-11-09 PROVISIONAL 前视标定（仅 demo/管线）
+
+- 原因：纸板在 50 mm 偏置下跨位姿弯曲；正式门限（fit ≤2 px、holdout ≤3 px、板法向 ≤3°）无法通过。
+- 用上一块板的 14 个样本，放宽 fit ≤20 px、holdout ≤35 px：fit 14.165 px、holdout 28.553 px、板法向 18.22°。
+- 状态写入 `configs/cameras.yaml` 的 `calibration_status: PROVISIONAL`；`calibration_mode: two_plane_pnp_provisional`；hash `10a40b50…`。
+- `load_camera_specs`/`RealCameraSource` 接受 PROVISIONAL；感知工具输出 `calibration_status` 与 `provisional=true`；server 启动时打印警告。
+- **不得用于正式 DOE**；正式实验前必须换刚性衬底、重新标定并通过 2 px/3 px 门限，改为 `VALID`。
+- 生成脚本：`python scripts/make_provisional_calibration.py`（不动机器人，读 `audit/front_planar_last.json`）。
