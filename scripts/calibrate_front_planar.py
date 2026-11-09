@@ -34,6 +34,7 @@ from dobot_rua.calibration.front_planar import (
     CalibrationRejected,
     PlanarSample,
     build_pose_plan,
+    camera_controls_from_config,
     fit_two_plane,
     nearest_solution,
     save_planar_calibration,
@@ -254,18 +255,11 @@ def main() -> int:
         return 1
     normal_spread = _max_normal_spread_deg(board_poses)
     print(f"board normal spread: {normal_spread:.2f} deg")
-    camera_controls = {
-        key: front[key]
-        for key in (
-            "focus_automatic_continuous",
-            "focus_absolute",
-            "auto_exposure",
-            "exposure",
-            "white_balance_automatic",
-            "white_balance_temperature",
-        )
-        if key in front
-    }
+    try:
+        camera_controls = camera_controls_from_config(front)
+    except ValueError as error:
+        print(f"calibration rejected: {error}")
+        return 1
     try:
         calibration, diagnostics = fit_two_plane(
             samples,

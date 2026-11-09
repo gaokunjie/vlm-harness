@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import time
+import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import cv2
 import numpy as np
 import yaml
 
@@ -22,12 +25,54 @@ from ..geometry import (
     derive_homography,
     project_point_to_pixel,
     solve_pnp_two_plane,
+    undistort_points,
     validate_rigid_transform,
+)
+
+REQUIRED_CAMERA_CONTROLS = (
+    "focus_automatic_continuous",
+    "focus_absolute",
+    "auto_exposure",
+    "exposure",
+    "white_balance_automatic",
+    "white_balance_temperature",
 )
 
 
 class CalibrationRejected(RuntimeError):
     """Raised when samples or residuals fail the acceptance gates."""
+
+
+def camera_controls_from_config(front: Mapping[str, Any]) -> dict[str, Any]:
+    """Require the locked front-camera controls used in the calibration hash."""
+    missing = [
+        key
+        for key in REQUIRED_CAMERA_CONTROLS
+        if key not in front or front[key] is None
+    ]
+    if missing:
+        raise ValueError(
+            "front camera controls missing; lock focus/exposure/WB before "
+            f"calibrating: {', '.join(missing)}"
+        )
+    return {key: front[key] for key in REQUIRED_CAMERA_CONTROLS}
+
+
+def _region_from_samples(
+    samples: Sequence[PlanarSample], margin_m: float = 0.01
+) -> np.ndarray:
+    points = np.asarray(
+        [sample.tip_xyz_m[:2] for sample in samples], dtype=np.float32
+    ).reshape(-1, 1, 2)
+    hull = cv2.convexHull(points).reshape(-1, 2).astype(float)
+    if len(hull) < 3:
+        raise CalibrationRejected(
+            "calibration samples do not span a 2D region; widen the x/y grid"
+        )
+    centroid = hull.mean(axis=0)
+    directions = hull - centroid
+    norms = np.linalg.norm(directions, axis=1, keepdims=True)
+    return hull + directions / np.maximum(norms, 1e-9) * float(margin_m)
 
 
 @dataclass(frozen=True)
@@ -51,6 +96,7 @@ class PlanarCalibration:
     block_top_z_m: float
     block_height_m: float
     board_thickness_m: float
+    calibrated_region: np.ndarray
     camera_controls: Mapping[str, Any]
     fit_rmse_px: float
     holdout_max_px: float
@@ -82,6 +128,7 @@ def compute_calibration_hash(calibration: PlanarCalibration) -> str:
         "block_top_z_m": calibration.block_top_z_m,
         "block_height_m": calibration.block_height_m,
         "board_thickness_m": calibration.board_thickness_m,
+        "calibrated_region": calibration.calibrated_region,
         "camera_controls": calibration.camera_controls,
         "fit_rmse_px": calibration.fit_rmse_px,
         "holdout_max_px": calibration.holdout_max_px,
@@ -96,15 +143,25 @@ def _reprojection_errors(
     samples: Sequence[PlanarSample],
     transform: np.ndarray,
     intrinsic_k: np.ndarray,
+    distortion: np.ndarray,
 ) -> np.ndarray:
     errors = []
     for sample in samples:
+        # The stored cup pixel is the raw distorted pixel; the pinhole
+        # projection below is in the undistorted domain.
+        undistorted = undistort_points(
+            np.asarray(sample.cup_pixel_uv, dtype=float), intrinsic_k, distortion
+        )
         projected = project_point_to_pixel(
             intrinsic_k, transform, sample.tip_xyz_m
         )
         errors.append(
-            float(np.hypot(projected[0] - sample.cup_pixel_uv[0],
-                           projected[1] - sample.cup_pixel_uv[1]))
+            float(
+                np.hypot(
+                    projected[0] - undistorted[0],
+                    projected[1] - undistorted[1],
+                )
+            )
         )
     return np.asarray(errors, dtype=float)
 
@@ -127,6 +184,11 @@ def fit_two_plane(
     max_holdout_px: float = 3.0,
 ) -> tuple[PlanarCalibration, dict[str, Any]]:
     """Fit ``T_world_from_optical`` from samples on two parallel planes."""
+    if abs(float(block_top_z_m) - float(table_z_m)) < 0.02:
+        raise CalibrationRejected(
+            "table and block-top planes are less than 20 mm apart; "
+            "the PnP depth direction would be degenerate"
+        )
     usable = [
         sample
         for sample in samples
@@ -142,6 +204,7 @@ def fit_two_plane(
         raise CalibrationRejected(
             f"need at least 6 usable samples, got {len(usable)}"
         )
+    calibrated_region = _region_from_samples(usable)
 
     ordered = sorted(
         usable, key=lambda s: (s.plane, s.tip_xyz_m[0], s.tip_xyz_m[1])
@@ -171,12 +234,14 @@ def fit_two_plane(
     except ValueError as error:
         raise CalibrationRejected(f"PnP failed: {error}") from error
 
-    fit_errors = _reprojection_errors(fit_samples, transform, intrinsic_k)
+    fit_errors = _reprojection_errors(
+        fit_samples, transform, intrinsic_k, distortion
+    )
     fit_rmse = float(np.sqrt(np.mean(fit_errors**2))) if len(fit_errors) else 0.0
     fit_max = float(np.max(fit_errors)) if len(fit_errors) else 0.0
     if holdout_samples:
         holdout_errors = _reprojection_errors(
-            holdout_samples, transform, intrinsic_k
+            holdout_samples, transform, intrinsic_k, distortion
         )
         holdout_max = float(np.max(holdout_errors))
     else:
@@ -204,6 +269,7 @@ def fit_two_plane(
         block_top_z_m=float(block_top_z_m),
         block_height_m=float(block_height_m),
         board_thickness_m=float(board_thickness_m),
+        calibrated_region=calibrated_region,
         camera_controls=dict(camera_controls),
         fit_rmse_px=fit_rmse,
         holdout_max_px=holdout_max,
@@ -232,6 +298,13 @@ def save_planar_calibration(
     """Write the planar calibration into ``cameras.<name>`` and mark it valid."""
     path = Path(path)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        shutil.copy2(path, backup)
+        warnings.warn(
+            f"rewriting {path}; YAML comments are not preserved (backup: {backup})",
+            stacklevel=2,
+        )
     cameras = data.setdefault("cameras", {})
     camera = cameras.setdefault(camera_name, {})
     camera["intrinsic_K"] = calibration.intrinsic_K.tolist()
@@ -249,6 +322,7 @@ def save_planar_calibration(
         "block_top_z_m": calibration.block_top_z_m,
         "block_height_m": calibration.block_height_m,
         "board_thickness_m": calibration.board_thickness_m,
+        "calibrated_region": calibration.calibrated_region.tolist(),
         "camera_controls": dict(calibration.camera_controls),
         "fit_rmse_px": calibration.fit_rmse_px,
         "holdout_max_px": calibration.holdout_max_px,
@@ -284,6 +358,14 @@ def load_planar_calibration(
         homography_top = np.asarray(planar["H_top"], dtype=float)
         intrinsic_k = np.asarray(intrinsic, dtype=float)
         distortion_values = np.asarray(distortion, dtype=float).reshape(-1)
+        calibrated_region = np.asarray(planar["calibrated_region"], dtype=float)
+        if (
+            calibrated_region.ndim != 2
+            or calibrated_region.shape[1] != 2
+            or len(calibrated_region) < 3
+            or not np.isfinite(calibrated_region).all()
+        ):
+            return None
         validate_rigid_transform(transform, "front.planar.T_world_from_optical")
         for name, homography in (
             ("H_table", homography_table),
@@ -306,6 +388,7 @@ def load_planar_calibration(
             block_top_z_m=float(planar["block_top_z_m"]),
             block_height_m=float(planar["block_height_m"]),
             board_thickness_m=float(planar["board_thickness_m"]),
+            calibrated_region=calibrated_region,
             camera_controls=dict(planar.get("camera_controls") or {}),
             fit_rmse_px=float(planar["fit_rmse_px"]),
             holdout_max_px=float(planar["holdout_max_px"]),
