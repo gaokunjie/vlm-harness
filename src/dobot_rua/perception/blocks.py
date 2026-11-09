@@ -46,6 +46,7 @@ def detect_blocks(
     t_world_from_optical: np.ndarray,
     plane_z_m: float,
     colors: tuple[str, ...] = ("blue", "yellow"),
+    distortion: np.ndarray | None = None,
 ) -> list[BlockDetection]:
     """Detect filled square blocks with HSV + contours + subpixel moments."""
     detections: list[BlockDetection] = []
@@ -80,6 +81,7 @@ def detect_blocks(
                 t_world_from_optical,
                 (u, v),
                 plane_z_m,
+                distortion=distortion,
             )
             detections.append(
                 BlockDetection(
@@ -99,6 +101,7 @@ def measure_block_gt(
     t_world_from_optical: np.ndarray,
     plane_z_m: float,
     color: str,
+    distortion: np.ndarray | None = None,
 ) -> BlockDetection | None:
     """Independent GT path: BGR thresholds + connected components.
 
@@ -136,7 +139,13 @@ def measure_block_gt(
         return None
     _, label = best
     u, v = centroids[label]
-    world = project_pixel_to_plane(intrinsic_k, t_world_from_optical, (u, v), plane_z_m)
+    world = project_pixel_to_plane(
+        intrinsic_k,
+        t_world_from_optical,
+        (u, v),
+        plane_z_m,
+        distortion=distortion,
+    )
     area = float(stats[label, cv2.CC_STAT_AREA])
     return BlockDetection(
         id=0,

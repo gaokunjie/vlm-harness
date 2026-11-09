@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 
+from dobot_rua.geometry import project_point_to_pixel
 from dobot_rua.perception.blocks import detect_blocks, measure_block_gt
 
 
@@ -49,3 +50,58 @@ def test_measure_block_gt_ignores_a_long_line_component():
     yellow = measure_block_gt(image, K, T, plane_z_m=0.0, color="yellow")
     assert yellow is not None
     assert np.allclose(yellow.center_uv, (210.0, 210.0), atol=3.0)
+
+
+def test_block_projection_uses_block_top_plane():
+    K = np.array([[500.0, 0, 320.0], [0, 500.0, 240.0], [0, 0, 1]])
+    R = np.diag([1.0, -1.0, -1.0]) @ np.array(
+        [
+            [np.cos(0.35), 0, np.sin(0.35)],
+            [0, 1, 0],
+            [-np.sin(0.35), 0, np.cos(0.35)],
+        ]
+    )
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = [0.0, 0.0, 0.30]
+    true_xy = (0.14, 0.07)
+    top_z = 0.025
+    px = project_point_to_pixel(K, T, [true_xy[0], true_xy[1], top_z])
+    image = np.full((480, 640, 3), 255, np.uint8)
+    cv2.rectangle(
+        image,
+        (int(px[0]) - 20, int(px[1]) - 20),
+        (int(px[0]) + 20, int(px[1]) + 20),
+        (0, 255, 255),
+        -1,
+    )
+    top = detect_blocks(image, K, T, top_z)
+    table = detect_blocks(image, K, T, 0.0)
+    assert top and table
+    err_top = np.hypot(
+        top[0].center_xyz_m[0] - true_xy[0], top[0].center_xyz_m[1] - true_xy[1]
+    )
+    err_table = np.hypot(
+        table[0].center_xyz_m[0] - true_xy[0],
+        table[0].center_xyz_m[1] - true_xy[1],
+    )
+    assert err_top < 0.004
+    assert err_table > 0.010
+
+
+def test_detect_blocks_uses_distortion():
+    image = _scene()
+    K, T = _camera()
+    distortion = np.array([0.1, -0.05, 0, 0, 0.0])
+    plain = {block.color: block for block in detect_blocks(image, K, T, plane_z_m=0.0)}
+    distorted = {
+        block.color: block
+        for block in detect_blocks(
+            image, K, T, plane_z_m=0.0, distortion=distortion
+        )
+    }
+    assert not np.allclose(
+        plain["blue"].center_xyz_m,
+        distorted["blue"].center_xyz_m,
+        atol=1e-6,
+    )

@@ -97,6 +97,7 @@ def detect_line_intersection(
     t_world_from_optical: np.ndarray,
     plane_z_m: float,
     line_color: str,
+    distortion: np.ndarray | None = None,
 ) -> LineIntersection | None:
     """Detect the intersection of the two dominant same-color lines."""
     mask = _line_mask(image_bgr, line_color)
@@ -130,7 +131,13 @@ def detect_line_intersection(
     if best is None:
         return None
     _, point, first, second = best
-    world = project_pixel_to_plane(intrinsic_k, t_world_from_optical, point, plane_z_m)
+    world = project_pixel_to_plane(
+        intrinsic_k,
+        t_world_from_optical,
+        point,
+        plane_z_m,
+        distortion=distortion,
+    )
     return LineIntersection(
         line_color=line_color,
         intersection_uv=(float(point[0]), float(point[1])),
@@ -146,6 +153,7 @@ def measure_intersection_gt(
     t_world_from_optical: np.ndarray,
     plane_z_m: float,
     line_color: str,
+    distortion: np.ndarray | None = None,
 ) -> LineIntersection | None:
     """Independent GT path: standard Hough transform + theta clustering.
 
@@ -198,7 +206,13 @@ def measure_intersection_gt(
     if best is None:
         return None
     _, point, first, second = best
-    world = project_pixel_to_plane(intrinsic_k, t_world_from_optical, point, plane_z_m)
+    world = project_pixel_to_plane(
+        intrinsic_k,
+        t_world_from_optical,
+        point,
+        plane_z_m,
+        distortion=distortion,
+    )
     return LineIntersection(
         line_color=line_color,
         intersection_uv=(float(point[0]), float(point[1])),
