@@ -77,6 +77,8 @@ cameras:
     - 1280
     calibration_date: '2026-11-08'
     calibration_status: INVALID
+    planar: null
+    cup_center_in_board_mm: [25.0, 75.0, 0.0]
     calibration_note: DO NOT USE. This matrix was produced from the stale 5-touch
       session (25.39 mm fit residual, no usable holdout) during a debugging run. The
       robot base moved; discard it and re-calibrate after homing with a fixed board
@@ -128,7 +130,7 @@ cameras:
     holdout_points: 0
     holdout_error_mm: null
     holdout_max_mm: null
-    T_world_from_optical:
+    T_world_from_optical_invalid_stale_2026-11-09:
     - - -0.9997872144044169
       - 0.014680021889480139
       - -0.014492165841609738

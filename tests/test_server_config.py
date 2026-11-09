@@ -1,3 +1,20 @@
+import pytest
+
+
+def test_task_metadata_uses_block_height(tmp_path):
+    from dobot_rua.integration.server import _task_metadata
+
+    path = tmp_path / "task.yaml"
+    path.write_text(
+        "table_z_m: -0.02\nblock_size_m: 0.03\nblock_height_m: 0.04\nplace_radius_m: 0.02\n",
+        encoding="utf-8",
+    )
+    meta = _task_metadata(path)
+    assert meta["block_top_z_m"] == pytest.approx(0.02)
+    assert meta["block_height_m"] == pytest.approx(0.04)
+    assert meta["place_radius_m"] == pytest.approx(0.02)
+
+
 def test_server_parser_defaults():
     from dobot_rua.integration.server import parser
 

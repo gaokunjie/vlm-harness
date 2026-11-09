@@ -169,6 +169,30 @@ python scripts/measure_targets.py
 - 目标：bias <2 mm、随机误差 <3 mm。
 - 通过后冻结 GT 管线版本/hash。
 
+### 3.5 前视两平面 PnP 标定（2026-11-09）
+
+```bash
+# 0) 回零并锁 j4=88
+python scripts/home_robot.py
+
+# 1) 先 dry-run，确认 18 个位姿和平面高度
+python scripts/calibrate_front_planar.py --dry-run
+
+# 2) 吸盘吸刚性衬底上的 5x5/10mm 板，留白黑点在板系 (25,75) mm
+python scripts/calibrate_front_planar.py --samples-per-plane 9
+
+# 3) 逐平面 jog 独立验证；bias <2 mm、随机 <3 mm 才继续
+python scripts/validate_front_planar.py --plane both --points 3
+
+# 4) 用通过验收的 H_table 重测交点 GT
+python scripts/measure_targets.py
+```
+
+- `p_cup_board=(25,75,0) mm`，对应点是吸盘中心，不是板中心；
+- 两个高度：`table_z + board_thickness` 和 `table_z + block_height`；
+- 标定结果写入 `configs/cameras.yaml` 的 `front.planar`，带 `calibration_hash`；
+- 旧的 `front.T_world_from_optical` 已重命名为 `T_world_from_optical_invalid_stale_2026-11-09`，不得再使用。
+
 ## 4. 真机 adapter smoke
 
 1. 用 `DobotRobot` + 真实相机源构造 `DobotAdapter`；**必须传 `fk_params=load_fk(...)` 和 `safety_limits=SafetyLimits.from_yaml(...)`**，否则 adapter 只查 x/y/z 包围盒，不查关节可达性。

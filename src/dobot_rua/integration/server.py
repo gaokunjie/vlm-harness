@@ -33,11 +33,16 @@ def parser() -> argparse.ArgumentParser:
 def _task_metadata(path: Path) -> dict:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     table_z = float(data.get("table_z_m", 0.0))
-    block_size = float(data.get("block_size_m", 0.025))
+    block_height = float(
+        data.get("block_height_m", data.get("block_size_m", 0.025))
+    )
+    place_radius = float(data.get("place_radius_m", 0.0175))
     return {
         "task_id": "line_intersection",
         "table_z_m": table_z,
-        "block_top_z_m": table_z + block_size,
+        "block_top_z_m": table_z + block_height,
+        "block_height_m": block_height,
+        "place_radius_m": place_radius,
     }
 
 

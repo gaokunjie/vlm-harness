@@ -23,6 +23,7 @@
 6. **标定验收（DOE 前置）**：板重投影 <2 px；触点/held-out 3D RMS <2 mm、max <3 mm；闭环 10–20 个独立点 bias <2 mm、随机 <3 mm；每 session touch bias <3 mm，超了暂停。
 7. **失败关闭**：外参 `det ≠ +1`、残差超限、`calibration_hash` 缺失、或 `tcp_mm` 未测，都不得用于正式 trial。
 8. **回零固定动作**：每次回零后 j4 必须逆时针转 88° 并保持（`post_home_j4_offset_deg`）。只用 `scripts/home_robot.py` 或 `DobotRobot.home()` 回零；标定扫位姿用关节空间命令锁住 j4=88，不要用 Cartesian `r`。
+9. **前视平面模型（2026-11-09）**：`T_world_from_optical` 是两平面 PnP 的主模型；`H_table`/`H_top` 由 T 派生。对应点是吸盘中心 `p_cup_board=(25,75,0) mm`，不是板中心。块顶用 `z = table_z + block_height`，线交点用 `table_z`。`calibrated_region` 外的点必须拒绝；front 没有 VALID planar 时感知工具 fail-closed。旧的 canonical `front.T_world_from_optical` 已重命名为 `T_world_from_optical_invalid_stale_2026-11-09`，不得再用。
 
 ## 3. 2026-11-08 前视外参为什么作废
 

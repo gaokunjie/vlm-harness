@@ -369,3 +369,19 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 3. 红十字太淡：换更饱和的颜料或调检测阈值，否则"红色目标"这一 DOE 维度不可用。
 4. 外参达标前，正式 DOE 仍只跑 mock/离线。
 
+
+## 2026-11-09 前视两平面 PnP 标定（代码完成，待真机）
+
+- 设计：`../docs/superpowers/specs/2026-11-09-front-planar-calibration-design.md`
+- 计划：`../docs/superpowers/plans/2026-11-09-front-planar-pnp-calibration.md`
+- 主模型：两个高度的（吸盘中心去畸变像素 ↔ 吸盘尖 XYZ）用 `cv2.solvePnP` 解 `T_world_from_optical`；`H_table`/`H_top` 由 T 派生。
+- 对应点：`p_cup_board=(25,75,0) mm`，不是板中心；板中心相对吸盘的 50 mm 偏置不进入标定。
+- 感知：块顶用 `block_top_z_m`，线交点用 `table_z_m`；所有投影先 `cv2.undistortPoints(..., P=K)`。
+- 工具：front 必须有 `calibration.status=VALID`，`calibrated_region` 外的块/交点被拒绝；缺失/INVALID/hash 不匹配 fail-closed。
+- 新增脚本：
+  - `scripts/calibrate_front_planar.py`：回零、j4=88、两平面 x/y 采样、PnP、保存；
+  - `scripts/validate_front_planar.py`：逐平面 jog 对准，bias <2 mm、随机 <3 mm；
+  - `scripts/measure_targets.py`：改用 planar T + `table_z` + distortion 重测交点 GT。
+- `DobotRobot.move_joints` 改为 `MOVJ_ANGLE` + 到位稳定轮询；`DobotRobot.home()` 仍执行“回零 + j4 88°”。
+- 离线测试全绿（`pytest -q`）。
+- 待真机：实测 `table_z_m`、`block_height_m`、`board_thickness_m`；刚性衬底/防转；跑标定与 jog 验证；通过后再跑正式 trial。
