@@ -105,3 +105,13 @@ def test_detect_blocks_uses_distortion():
         distorted["blue"].center_xyz_m,
         atol=1e-6,
     )
+
+
+def test_detect_blocks_accepts_a_rotated_filled_square():
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    points = np.array([[300, 200], [380, 230], [350, 310], [270, 280]], dtype=np.int32)
+    cv2.fillPoly(image, [points], (0, 255, 0))
+    K, T = _camera()
+    blocks = detect_blocks(image, K, T, plane_z_m=0.0, colors=("green",))
+    assert blocks
+    assert blocks[0].color == "green"

@@ -69,7 +69,7 @@ def detect_blocks(
             if not 0.6 <= aspect <= 1.6:
                 continue
             fill = area / float(width * height)
-            if fill < 0.7:
+            if fill < 0.6:
                 continue
             moments = cv2.moments(contour)
             if moments["m00"] <= 0:

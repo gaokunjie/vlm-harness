@@ -98,11 +98,32 @@ def detect_line_intersection(
     plane_z_m: float,
     line_color: str,
     distortion: np.ndarray | None = None,
+    region_world: np.ndarray | None = None,
 ) -> LineIntersection | None:
     """Detect the intersection of the two dominant same-color lines."""
     mask = _line_mask(image_bgr, line_color)
     if mask is None:
         return None
+    if region_world is not None:
+        transform = np.asarray(t_world_from_optical, dtype=float)
+        camera_from_world = np.linalg.inv(transform)
+        rvec, _ = cv2.Rodrigues(camera_from_world[:3, :3])
+        tvec = camera_from_world[:3, 3]
+        region = np.asarray(region_world, dtype=float).reshape(-1, 2)
+        points = np.column_stack(
+            [region, np.full(len(region), float(plane_z_m))]
+        ).reshape(-1, 1, 3)
+        camera_distortion = (
+            np.zeros(5)
+            if distortion is None
+            else np.asarray(distortion, dtype=float).reshape(-1)
+        )
+        projected, _ = cv2.projectPoints(
+            points, rvec, tvec, np.asarray(intrinsic_k, dtype=float), camera_distortion
+        )
+        region_mask = np.zeros_like(mask)
+        cv2.fillPoly(region_mask, [projected.reshape(-1, 2).astype(np.int32)], 255)
+        mask = cv2.bitwise_and(mask, region_mask)
     segments = cv2.HoughLinesP(
         mask, 1, np.pi / 180.0, threshold=20, minLineLength=25, maxLineGap=8
     )

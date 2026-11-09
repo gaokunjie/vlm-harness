@@ -275,6 +275,7 @@ class PerceptionTools(ToolProvider):
             self._table_z(),
             line_color,
             distortion=distortion,
+            region_world=region,
         )
         if result is None:
             return ToolOutput(
@@ -387,6 +388,7 @@ class PerceptionTools(ToolProvider):
                 self._table_z(),
                 color,
                 distortion=distortion,
+                region_world=region,
             )
             if result is None:
                 continue

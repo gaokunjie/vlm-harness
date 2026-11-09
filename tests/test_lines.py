@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 
+from dobot_rua.geometry import project_pixel_to_plane
 from dobot_rua.perception.lines import detect_line_intersection, measure_intersection_gt
 
 
@@ -96,3 +97,23 @@ def test_measure_intersection_gt_does_not_share_the_agent_mask(monkeypatch):
     gt = lines.measure_intersection_gt(image, K, T, 0.0, "black")
     assert gt is not None
     assert np.allclose(gt.intersection_uv, (320.0, 240.0), atol=5.0)
+
+
+def test_detect_line_intersection_masks_outside_region():
+    image = _line_scene((0, 0, 255))  # red cross at (320, 240)
+    cv2.rectangle(image, (560, 360), (640, 440), (0, 0, 255), -1)  # red blob outside
+    K, T = _camera()
+    center = project_pixel_to_plane(K, T, (320.0, 240.0), 0.0)
+    region = np.array(
+        [
+            [center[0] - 0.05, center[1] - 0.05],
+            [center[0] + 0.05, center[1] - 0.05],
+            [center[0] + 0.05, center[1] + 0.05],
+            [center[0] - 0.05, center[1] + 0.05],
+        ]
+    )
+    result = detect_line_intersection(
+        image, K, T, plane_z_m=0.0, line_color="red", region_world=region
+    )
+    assert result is not None
+    assert np.allclose(result.intersection_uv, (320.0, 240.0), atol=5.0)
