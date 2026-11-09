@@ -155,3 +155,45 @@ def test_dobot_close_can_keep_suction_on():
     robot.close(release=False)
     assert driver.suction is True
     assert driver.closed is True
+
+
+def test_dobot_move_joints_uses_movj_angle():
+    from dobot_rua.hardware.dobot import DobotRobot
+
+    class FakeDriver:
+        def __init__(self):
+            self.pose_value = (120.0, 0.0, 20.0, 0.0, 0.0, 10.88, 49.98, 0.0)
+            self.calls = []
+
+        def pose(self):
+            return self.pose_value
+
+        def speed(self, velocity, acceleration):
+            pass
+
+        def _set_ptp_cmd(self, x, y, z, r, mode, wait):
+            self.calls.append((x, y, z, r, mode, wait))
+            self.pose_value = (
+                self.pose_value[0],
+                self.pose_value[1],
+                self.pose_value[2],
+                r,
+                x,
+                y,
+                z,
+                r,
+            )
+
+        def suck(self, on):
+            pass
+
+        def close(self):
+            pass
+
+    driver = FakeDriver()
+    robot = DobotRobot(driver=driver)
+    robot.connect()
+    robot.move_joints(0.0, 45.0, 45.0, 88.0, timeout_s=1.0)
+    assert driver.calls
+    assert driver.calls[-1][3] == 88.0
+    assert driver.calls[-1][4].name == "MOVJ_ANGLE"

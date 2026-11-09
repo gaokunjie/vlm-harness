@@ -354,3 +354,32 @@ def nearest_solution(
         ),
     )
     return tuple(float(value) for value in best)
+
+
+@dataclass(frozen=True)
+class PosePlan:
+    x_mm: float
+    y_mm: float
+    z_mm: float
+    plane: str
+
+
+def build_pose_plan(
+    center_xy_mm: tuple[float, float],
+    spacing_mm: float,
+    cols: int,
+    rows: int,
+    table_z_mm: float,
+    block_height_mm: float,
+    board_thickness_mm: float,
+) -> list[PosePlan]:
+    """Plan the two-height x/y sweep; ``z_mm`` is the suction-tip height."""
+    grid = plan_grid(center_xy_mm, spacing_mm, cols, rows)
+    plan: list[PosePlan] = []
+    for plane, z_mm in (
+        ("table", float(table_z_mm) + float(board_thickness_mm)),
+        ("top", float(table_z_mm) + float(block_height_mm)),
+    ):
+        for x_mm, y_mm in grid:
+            plan.append(PosePlan(x_mm=x_mm, y_mm=y_mm, z_mm=z_mm, plane=plane))
+    return plan
