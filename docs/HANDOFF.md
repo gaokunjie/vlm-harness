@@ -99,7 +99,7 @@ wrist 之前用大板得到 provisional 内参（RMS 3.36 px），请用小板�
 
 ### 3.0 front/side 外参：触碰法（推荐）
 
-> **2026-11-09 更新**：`configs/cameras.yaml` 里原先的 front `T_world_from_optical` 是反射（`det = -1`），已作废并重命名。前视外参不要再用 `annotate_reachability --save`；用 `finish_front_extrinsic.py prepare/record/solve`（已知 `tip_length_mm=66.6`、板约定 `Rx(180)`、默认 `--holdout 2`、残差/留出 3 mm 硬门限；`--force` 仅调试）。底座被移动过；先回零，再重标。
+> **2026-11-09 更新**：`configs/cameras.yaml` 里原先的 front `T_world_from_optical` 是反射（`det = -1`），已作废并重命名。前视外参不要再用 `annotate_reachability --save`；用 `finish_front_extrinsic.py prepare/record/solve`（已知 `tip_length_mm=71.0`、板约定 `Rx(180)`、默认 `--holdout 2`、残差/留出 3 mm 硬门限；`--force` 仅调试）。底座被移动过；先回零，再重标。
 
 ```bash
 python scripts/calibrate_cameras_touch.py --cameras front,side
@@ -196,7 +196,7 @@ python scripts/measure_targets.py
 ## 4. 真机 adapter smoke
 
 1. 用 `DobotRobot` + 真实相机源构造 `DobotAdapter`；**必须传 `fk_params=load_fk(...)` 和 `safety_limits=SafetyLimits.from_yaml(...)`**，否则 adapter 只查 x/y/z 包围盒，不查关节可达性。
-   - 吸盘尖偏移用 `AdapterConfig(tip_length_mm=66.6)`（mm，竖直标量）；`read_state` 现在报吸盘尖 = 法兰 − (0,0,L)，`step_pose` 收吸盘尖目标并下发给法兰 = 目标 + (0,0,L)；`capture()` 的 wrist 外参仍用三轴法兰系。`tip_length_mm` 从 `configs/cameras.yaml` 的 `front.tip_length_mm` 读取。
+   - 吸盘尖偏移用 `AdapterConfig(tip_length_mm=71.0)`（mm，竖直标量）；`read_state` 现在报吸盘尖 = 法兰 − (0,0,L)，`step_pose` 收吸盘尖目标并下发给法兰 = 目标 + (0,0,L)；`capture()` 的 wrist 外参仍用三轴法兰系。`tip_length_mm` 从 `configs/cameras.yaml` 的 `front.tip_length_mm` 读取。
 2. 工具朝向按“朝下”四元数 `(0,1,0,0)` 上报；`move` 目标姿态必须复制实测姿态，偏离超过 0.35 rad 会被拒绝。
 3. 先只做 `read_state` / `capture` / 单步小位移 / 吸盘 ON-OFF。
 3. 确认：

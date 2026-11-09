@@ -76,69 +76,66 @@ cameras:
     - 720
     - 1280
     calibration_date: '2026-11-09'
-    calibration_status: PROVISIONAL
+    calibration_status: INVALID
     planar:
       T_world_from_optical:
-      - - -0.9736465438193069
-        - 0.22770606585875305
-        - -0.012741871128206605
-        - 0.1303916723780676
-      - - 0.22806156914915207
-        - 0.9719822977375799
-        - -0.05690635783460864
-        - -0.01975238702819305
-      - - -0.0005730496881987731
-        - -0.0583126097504065
-        - -0.9982982075302709
-        - 0.15196278921316317
+      - - -0.9996907198862629
+        - -0.016977884882179273
+        - 0.018171846307202394
+        - 0.1837891578166902
+      - - -0.01656784871762643
+        - 0.9996099585217801
+        - 0.022481930810197295
+        - -0.004180527463174016
+      - - -0.0185464541666314
+        - 0.02217390919554159
+        - -0.9995820860683893
+        - 0.24240228718684004
       - - 0.0
         - 0.0
         - 0.0
         - 1.0
       H_table:
-      - - -0.0002111422843370945
-        - 5.760048070796882e-05
-        - 0.24372682240905383
-      - - 4.946312642232121e-05
-        - 0.00021122279149587495
-        - -0.14257261275363386
-      - - 5.86494324037558e-07
-        - 6.012015424020245e-05
+      - - -0.00029978776067782334
+        - -9.304836949740376e-06
+        - 0.3844453837108683
+      - - -5.102798115792918e-06
+        - 0.00030550806905257764
+        - -0.1076519670427461
+      - - 1.860153119935746e-05
+        - -2.2403514045235257e-05
         - 1.0
       H_top:
-      - - -0.00018623003923302214
-        - 5.1731371153683054e-05
-        - 0.23035948203156317
-      - - 4.362782022673179e-05
-        - 0.00018617000878350356
-        - -0.12808655293844562
-      - - 5.86494324037558e-07
-        - 6.0120154240202445e-05
+      - - -0.0002747212736439705
+        - -8.875994792205106e-06
+        - 0.3678568661635289
+      - - -4.687371867656425e-06
+        - 0.0002802590528010785
+        - -0.09909784526822706
+      - - 1.860153119935746e-05
+        - -2.2403514045235257e-05
         - 1.0
       p_cup_board_mm:
-      - 25.0
-      - 75.0
+      - 0.0
+      - 0.0
       - 0.0
       table_z_m: -0.06
       block_top_z_m: -0.034999999999999996
       block_height_m: 0.025
       board_thickness_m: 0.002
       calibrated_region:
-      - - 0.1426339562574202
-        - -0.00017398847764402495
-      - - 0.13984106669552945
-        - 0.0185410710760536
-      - - 0.12112602447550909
-        - 0.021333940916479187
-      - - 0.12112600868258652
-        - 0.021333939526087774
-      - - 0.10284722723659404
-        - 0.00022965335932949977
-      - - 0.10569895781115969
-        - -0.015601075491803326
-      - - 0.13876999891176678
-        - -0.01653000152576734
+      - - 0.294117676438024
+        - 0.10833048525250061
+      - - 0.3002713232816888
+        - -0.09291484627058146
+      - - 0.07028306101960352
+        - -0.09994108143071162
+      - - 0.06412941417593873
+        - 0.10130425009237046
       calibration_status: PROVISIONAL
+      calibration_mode: touch_board
+      touch_rms_mm: 6.895413722429043
+      touch_max_mm: 9.399711909907042
       provisional: true
       camera_controls:
         focus_automatic_continuous: 0
@@ -147,9 +144,9 @@ cameras:
         exposure: 280
         white_balance_automatic: 0
         white_balance_temperature: 4600
-      fit_rmse_px: 14.164830435967835
-      holdout_max_px: 28.55274772644043
-      samples: 14
+      fit_rmse_px: 0.0
+      holdout_max_px: 0.0
+      samples: 8
       measured_at: '2026-11-09'
     cup_center_in_board_mm:
     - 25.0
@@ -161,15 +158,14 @@ cameras:
     exposure: 280
     white_balance_automatic: 0
     white_balance_temperature: 4600
-    calibration_note: DO NOT USE. This matrix was produced from the stale 5-touch
-      session (25.39 mm fit residual, no usable holdout) during a debugging run. The
-      robot base moved; discard it and re-calibrate after homing with a fixed board
-      and 8-10 fresh cup-tip touches.
-    tip_length_mm: 66.6
+    calibration_note: DO NOT USE. The tip length was updated to 71.0 mm on 2026-11-09;
+      the previous touch planar was fitted with 66.6 mm and is stale. Re-run
+      scripts/calibrate_cameras_touch.py with the 7x8 board and reachable rows/columns.
+    tip_length_mm: 71.0
     tip_length_measured_at: '2026-11-09'
     tip_length_note: Vertical distance from the flange reference plane (the end mounting
-      face, manual figure 3.10) to the suction-cup lip. The cup is vertical and centred
-      on j4, so tip xy = flange xy and tip z = flange z - 66.6.
+      face) to the suction-cup lip. Updated to 71.0 mm on 2026-11-09. The cup is
+      vertical and centred on j4, so tip xy = flange xy and tip z = flange z - 71.0.
     T_world_from_optical_invalid_reflection_2026-11-08:
     - - 0.892164684343855
       - 0.4513969656844496
@@ -187,9 +183,9 @@ cameras:
       - 0.0
       - 0.0
       - 1.0
-    calibration_mode: two_plane_pnp_provisional
-    touch_residual_mm: 25.39
-    touch_points: 5
+    calibration_mode: touch_board
+    touch_residual_mm: 6.895
+    touch_points: 8
     board_reprojection_px: 0.894
     camera_height_mm: 331.81
     T_world_from_optical_invalid_stale_2026-11-09:
@@ -219,7 +215,24 @@ cameras:
     - -0.41
     - 0.0
     poses: 13
-    calibration_hash: 10a40b505437f4d190371386b8e88246ac088a31e315fa872bc5d8fcb7016518
+    calibration_hash: 2d96b074cf449df13ae8b30cd4b2d64ee0905b7800ad248f2befd9dfcdcd268c
+    T_world_from_optical:
+    - - -0.9996907198862629
+      - -0.016977884882179273
+      - 0.018171846307202394
+      - 0.1837891578166902
+    - - -0.01656784871762643
+      - 0.9996099585217801
+      - 0.022481930810197295
+      - -0.004180527463174016
+    - - -0.0185464541666314
+      - 0.02217390919554159
+      - -0.9995820860683893
+      - 0.24240228718684004
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 1.0
   side:
     device: /dev/video4
     usb_port: usb-0000:00:14.0-4

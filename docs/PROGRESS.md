@@ -401,3 +401,10 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 触碰脚本改为：可见 marker ≥6 即可，不再要求整板可见；触点从**可见 marker**中选 8 个分散点；每次触点后等 2 s；记录吸盘尖（法兰 − 66.6 mm）。
 - 结果写入 planar：`calibration_mode: touch_board`、`touch_rms_mm`/`touch_max_mm`、`calibrated_region` = 板足迹 + 20 mm（约 195×220 mm）；RMS ≤2 mm 且 max ≤3 mm 标 VALID，否则 PROVISIONAL。
 - 运行：`python scripts/calibrate_cameras_touch.py --cameras front --board-preset large --touch-count 8 --settle-s 2.0`。
+
+## 2026-11-09 TCP / 板面修正
+
+- 实测法兰到吸盘尖 **L = 71.0 mm**（不是 66.6）；`configs/cameras.yaml` 已改为 71.0，旧的 66.6 触碰 planar 已标 INVALID。
+- 板面确定为 **60 mm**（基座下方），`configs/task.yaml` 保持 `table_z_m: -0.060`。
+- 触碰脚本现在打印**吸盘尖 z**（法兰 − 71.0），不再打印法兰 z，避免误读。
+- 上一次触碰（66.6）记录的法兰 z≈−21 mm，对应尖端≈−92 mm；板面 −60 mm，相差约 32 mm。重跑前请确认：吸盘唇口接触板面时，固件 `pose().z` 应约为 `−60 + 71 = +11 mm`；若不是，需要先查 TCP/板面高度。

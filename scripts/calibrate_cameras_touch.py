@@ -286,8 +286,8 @@ def main() -> int:
                 ]
             )
             print(
-                f"  recorded base ({state.x_mm:.1f}, {state.y_mm:.1f}, "
-                f"{state.z_mm:.1f}) mm"
+                f"  recorded tip ({state.x_mm:.1f}, {state.y_mm:.1f}, "
+                f"{state.z_mm - tip_length_mm:.1f}) mm"
             )
     finally:
         robot.close()
