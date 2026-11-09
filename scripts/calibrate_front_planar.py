@@ -79,6 +79,12 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--settle-translation-mm", type=float, default=1.5)
     p.add_argument("--settle-rotation-deg", type=float, default=1.2)
     p.add_argument("--settle-pixel", type=float, default=0.5)
+    p.add_argument(
+        "--fixed-wait-s",
+        type=float,
+        default=0.0,
+        help="if >0, sleep this long after each move and take one frame (bypasses the stability gate)",
+    )
     return p
 
 
@@ -329,21 +335,49 @@ def main() -> int:
             if np.linalg.norm(tip - np.array([pose.x_mm, pose.y_mm, pose.z_mm])) > 2.0:
                 print(f"skip {pose.plane} ({pose.x_mm:.1f},{pose.y_mm:.1f}): not settled")
                 continue
-            stable = _capture_stable_board(
-                board,
-                intrinsic,
-                distortion,
-                device,
-                int(width),
-                int(height),
-                tuple(args.mask_rect) if args.mask_rect else None,
-                p_cup,
-                frames=args.settle_frames,
-                timeout_s=args.settle_timeout_s,
-                translation_mm=args.settle_translation_mm,
-                rotation_deg=args.settle_rotation_deg,
-                pixel=args.settle_pixel,
-            )
+            if args.fixed_wait_s > 0:
+                time.sleep(float(args.fixed_wait_s))
+                image = _capture_front(device, int(width), int(height))
+                if args.mask_rect:
+                    x0, y0, x1, y1 = args.mask_rect
+                    image[y0:y1, x0:x1] = 255
+                corners, ids = detect_board(board, image)
+                cup = (
+                    cup_center_pixel(
+                        corners,
+                        ids,
+                        board,
+                        intrinsic,
+                        distortion,
+                        cup_center_in_board_mm=p_cup,
+                    )
+                    if corners is not None and ids is not None
+                    else None
+                )
+                if cup is None:
+                    print(
+                        f"skip {pose.plane} ({pose.x_mm:.1f},{pose.y_mm:.1f}): "
+                        "board not found"
+                    )
+                    continue
+                pixel, board_transform = cup
+                stable = (image, corners, ids, board_transform, pixel)
+            else:
+                stable = _capture_stable_board(
+                    board,
+                    intrinsic,
+                    distortion,
+                    device,
+                    int(width),
+                    int(height),
+                    tuple(args.mask_rect) if args.mask_rect else None,
+                    p_cup,
+                    frames=args.settle_frames,
+                    timeout_s=args.settle_timeout_s,
+                    translation_mm=args.settle_translation_mm,
+                    rotation_deg=args.settle_rotation_deg,
+                    pixel=args.settle_pixel,
+                )
             if stable is None:
                 print(
                     f"skip {pose.plane} ({pose.x_mm:.1f},{pose.y_mm:.1f}): "
