@@ -20,6 +20,7 @@ from uni_robot_agent.tools.toolkit import (
     schema,
 )
 
+from ..geometry import point_in_polygon
 from ..perception.blocks import detect_blocks
 from ..perception.lines import detect_line_intersection
 
@@ -122,13 +123,31 @@ class PerceptionTools(ToolProvider):
             return self.episode.env.snapshot(snapshot_id)
         return self.episode.latest_snapshot
 
-    def _front_frame(self, snapshot: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _front_frame(
+        self, snapshot: dict
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
         camera = snapshot["cameras"]["front"]
+        calibration = camera.get("calibration")
+        if calibration is not None:
+            if calibration.get("status") != "VALID":
+                raise FrontCameraUncalibrated(
+                    "front camera planar calibration is not VALID; recalibrate "
+                    "before using world coordinates"
+                )
+        elif not self._is_mock():
+            raise FrontCameraUncalibrated(
+                "front camera planar calibration is missing; run "
+                "scripts/calibrate_front_planar.py before using world coordinates"
+            )
         extrinsic_value = camera.get("T_world_from_optical")
         if extrinsic_value is None:
             raise FrontCameraUncalibrated(
-                "front camera is not calibrated: T_world_from_optical is missing; "
-                "run scripts/finish_front_extrinsic.py solve before using world coordinates"
+                "front camera is not calibrated: T_world_from_optical is missing"
+            )
+        intrinsic_value = camera.get("intrinsic_K")
+        if intrinsic_value is None:
+            raise FrontCameraUncalibrated(
+                "front camera is not calibrated: intrinsic_K is missing"
             )
         extrinsic = np.asarray(extrinsic_value, dtype=float)
         if extrinsic.shape != (4, 4):
@@ -147,12 +166,33 @@ class PerceptionTools(ToolProvider):
         image = cv2.imread(str(path))
         if image is None:
             raise RuntimeError(f"could not read front camera image at {path}")
-        intrinsic = np.asarray(camera["intrinsic_K"], dtype=float)
-        return image, intrinsic, extrinsic
+        intrinsic = np.asarray(intrinsic_value, dtype=float)
+        distortion_value = (calibration or {}).get("distortion")
+        distortion = (
+            None
+            if distortion_value is None
+            else np.asarray(distortion_value, dtype=float).reshape(-1)
+        )
+        return image, intrinsic, extrinsic, distortion
+
+    def _calibrated_region(self, snapshot: dict) -> np.ndarray | None:
+        calibration = snapshot["cameras"]["front"].get("calibration") or {}
+        region = calibration.get("calibrated_region")
+        if region is None:
+            if self._is_mock():
+                return None
+            raise FrontCameraUncalibrated(
+                "front camera calibrated_region is missing; recalibrate"
+            )
+        return np.asarray(region, dtype=float).reshape(-1, 2)
 
     def _front_or_error(self, snapshot: dict):
         try:
-            return self._front_frame(snapshot), None
+            frame = self._front_frame(snapshot)
+            # Validate the region here too so a missing region is returned as a
+            # structured tool error rather than escaping the handler.
+            self._calibrated_region(snapshot)
+            return frame, None
         except FrontCameraUncalibrated as error:
             return None, ToolOutput(
                 success=False,
@@ -166,8 +206,17 @@ class PerceptionTools(ToolProvider):
     def _metadata(self) -> dict:
         return self.episode.description.environment.metadata
 
-    def _plane_z(self) -> float:
+    def _table_z(self) -> float:
         return float(self._metadata().get("table_z_m", 0.0))
+
+    def _plane_z(self) -> float:
+        return self._table_z()
+
+    def _block_top_z(self) -> float:
+        return float(self._metadata().get("block_top_z_m", 0.025))
+
+    def _place_radius_m(self) -> float:
+        return float(self._metadata().get("place_radius_m", 0.0175))
 
     def _is_mock(self) -> bool:
         return bool(self._metadata().get("mock", False))
@@ -178,8 +227,23 @@ class PerceptionTools(ToolProvider):
         frame, error = self._front_or_error(snapshot)
         if error is not None:
             return error
-        image, intrinsic, extrinsic = frame
-        blocks = detect_blocks(image, intrinsic, extrinsic, self._plane_z())
+        image, intrinsic, extrinsic, distortion = frame
+        region = self._calibrated_region(snapshot)
+        blocks = detect_blocks(
+            image,
+            intrinsic,
+            extrinsic,
+            self._block_top_z(),
+            distortion=distortion,
+        )
+        if region is not None:
+            blocks = [
+                block
+                for block in blocks
+                if point_in_polygon(
+                    np.asarray(block.center_xyz_m[:2], dtype=float), region
+                )
+            ]
         return ToolOutput(
             extra={
                 "snapshot_id": snapshot["snapshot_id"],
@@ -195,15 +259,33 @@ class PerceptionTools(ToolProvider):
         frame, error = self._front_or_error(snapshot)
         if error is not None:
             return error
-        image, intrinsic, extrinsic = frame
+        image, intrinsic, extrinsic, distortion = frame
+        region = self._calibrated_region(snapshot)
         result = detect_line_intersection(
-            image, intrinsic, extrinsic, self._plane_z(), line_color
+            image,
+            intrinsic,
+            extrinsic,
+            self._table_z(),
+            line_color,
+            distortion=distortion,
         )
         if result is None:
             return ToolOutput(
                 success=False,
                 error=f"no {line_color} line intersection found",
                 extra={"snapshot_id": snapshot["snapshot_id"], "mock": self._is_mock()},
+            )
+        if region is not None and not point_in_polygon(
+            np.asarray(result.intersection_xyz_m[:2], dtype=float), region
+        ):
+            return ToolOutput(
+                success=False,
+                error="intersection outside calibrated_region",
+                extra={
+                    "snapshot_id": snapshot["snapshot_id"],
+                    "intersection_xyz_m": result.intersection_xyz_m,
+                    "mock": self._is_mock(),
+                },
             )
         return ToolOutput(
             extra={
@@ -261,14 +343,79 @@ class PerceptionTools(ToolProvider):
         frame, error = self._front_or_error(snapshot)
         if error is not None:
             return error
-        image, intrinsic, extrinsic = frame
-        blocks = detect_blocks(image, intrinsic, extrinsic, self._plane_z())
+        image, intrinsic, extrinsic, distortion = frame
+        region = self._calibrated_region(snapshot)
+        blocks = detect_blocks(
+            image,
+            intrinsic,
+            extrinsic,
+            self._block_top_z(),
+            distortion=distortion,
+        )
+        if region is not None:
+            blocks = [
+                block
+                for block in blocks
+                if point_in_polygon(
+                    np.asarray(block.center_xyz_m[:2], dtype=float), region
+                )
+            ]
+        if not blocks:
+            return ToolOutput(
+                success=False,
+                error="no block found for verify_place",
+                extra={"snapshot_id": snapshot["snapshot_id"], "mock": False},
+            )
+        intersections = {}
+        for color in ("black", "red"):
+            result = detect_line_intersection(
+                image,
+                intrinsic,
+                extrinsic,
+                self._table_z(),
+                color,
+                distortion=distortion,
+            )
+            if result is None:
+                continue
+            if region is not None and not point_in_polygon(
+                np.asarray(result.intersection_xyz_m[:2], dtype=float), region
+            ):
+                continue
+            intersections[color] = result
+        if not intersections:
+            return ToolOutput(
+                success=False,
+                error="no line intersection found for verify_place",
+                extra={"snapshot_id": snapshot["snapshot_id"], "mock": False},
+            )
+        best_error = None
+        best_block = None
+        best_color = None
+        for block in blocks:
+            for color, result in intersections.items():
+                error_mm = float(
+                    np.hypot(
+                        block.center_xyz_m[0] - result.intersection_xyz_m[0],
+                        block.center_xyz_m[1] - result.intersection_xyz_m[1],
+                    )
+                    * 1000.0
+                )
+                if best_error is None or error_mm < best_error:
+                    best_error = error_mm
+                    best_block = block
+                    best_color = color
+        placed = bool(best_error is not None and best_error <= self._place_radius_m() * 1000.0)
         return ToolOutput(
             extra={
                 "snapshot_id": snapshot["snapshot_id"],
-                "blocks": [asdict(block) for block in blocks],
-                "placed": None,
-                "note": "compare block_xy with the requested intersection",
+                "placed": placed,
+                "error_mm": best_error,
+                "matched_line_color": best_color,
+                "block": asdict(best_block) if best_block is not None else None,
+                "intersections": {
+                    color: asdict(result) for color, result in intersections.items()
+                },
                 "mock": False,
             }
         )

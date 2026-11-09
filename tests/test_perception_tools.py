@@ -44,6 +44,11 @@ def _episode(path, *, z_m=0.05, gripper=1.0):
                 "rgb": {"artifact_id": "a1"},
                 "intrinsic_K": intrinsic.tolist(),
                 "T_world_from_optical": extrinsic.tolist(),
+                "calibration": {
+                    "status": "VALID",
+                    "distortion": [0, 0, 0, 0, 0],
+                    "calibrated_region": [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+                },
             }
         },
         "state": {},
@@ -156,3 +161,40 @@ def test_wrist_tools_use_measured_state(tmp_path):
     assert gap.extra["contact"] is False
     grasp = tools.wrist_verify_grasp()
     assert grasp.extra["attached"] is False
+
+
+def test_list_objects_filters_outside_calibrated_region(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["calibration"]["calibrated_region"] = [
+        [0.5, 0.5],
+        [0.6, 0.5],
+        [0.6, 0.6],
+        [0.5, 0.6],
+    ]
+    output = PerceptionTools(episode).list_objects()
+    assert output.extra["blocks"] == []
+
+
+def test_front_tools_fail_when_planar_invalid(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["calibration"]["status"] = "INVALID"
+    output = PerceptionTools(episode).list_objects()
+    assert output.success is False
+
+
+def test_find_line_intersection_rejects_outside_region(tmp_path):
+    image_path = tmp_path / "front.png"
+    _scene(image_path)
+    episode = _episode(image_path)
+    episode.latest_snapshot["cameras"]["front"]["calibration"]["calibrated_region"] = [
+        [0.5, 0.5],
+        [0.6, 0.5],
+        [0.6, 0.6],
+        [0.5, 0.6],
+    ]
+    output = PerceptionTools(episode).find_line_intersection("black")
+    assert output.success is False
