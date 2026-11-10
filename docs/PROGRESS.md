@@ -5,7 +5,7 @@
 - 上游：uni-robot-agent `f3e0ec0`（v0.1.1）
 - 设计：`../docs/superpowers/specs/2026-11-07-rua-line-intersection-design.md`
 - 计划：`../docs/superpowers/plans/2026-11-07-rua-line-intersection-implementation.md`
-- 当前测试：**141 passed**（`.venv/bin/python -m pytest`，2026-11-09）
+- 当前测试：**191 passed**（`.venv/bin/python -m pytest`，2026-11-10）
 
 ## 已完成（无需用户/硬件）
 
@@ -433,3 +433,46 @@ env -u ALL_PROXY -u all_proxy .venv/bin/python scripts/calibrate_cameras_touch.p
 
 - 板平放在白板上、板面朝 front 相机；机械臂先移出板的视野，再按提示依次触碰 8 个 marker 中心。
 - 触碰脚本已传入 `base_j1_scale`，记录的 tip x/y 为物理坐标；`table_z_m` 使用 `-0.093`。
+
+## 2026-11-10 真机 demo 结果与当前状态
+
+### 标定（front，PROVISIONAL）
+
+- 大板（7 列 × 8 行 / 25 mm / `DICT_4X4_50`）触碰标定，8 个触点：**RMS 3.88 mm，max 6.02 mm**。
+- `table_z_m=-0.093`、`block_top_z_m=-0.068`；标定区 **x 66.7–297.0 mm，y −101.4–100.1 mm**。
+- 状态仍是 **PROVISIONAL**（正式门限 RMS ≤2 mm / max ≤3 mm 未达到）；误差主要来自手动对准 marker 中心与纸板轻微弯曲。demo 可用，**不得进入正式 DOE**。
+- 相关根因和修复：`docs/J1_BASE_SCALE.md`（底座 j1 物理角 = 1.26932 × 固件角；`table_z` 从 −0.060 改为 −0.093）。
+
+### 检测器修复（本轮）
+
+- `charuco.py`：新增 `detect_markers` / `board_pose_from_markers` / `marker_reprojection_px`，板被部分遮挡时用已解码 marker 直接 PnP，不再依赖 ChArUco 角点插值。
+- `blocks.py`：斜放方块改用 `minAreaRect` 的 aspect/fill（45° 时轴对齐 bbox fill 只有 0.5）；45° 旋转方块回归测试。
+- `lines.py`：黑线掩码改为“暗像素 (gray<110 且 (S<100 或 V<90))”＋丢弃面积 >12000 px 的连通域，避免机械臂黑色本体和板框赢得 Hough；新增“大块黑色物体不干扰细黑十字”回归测试。
+
+### 绿块 → 红叉（成功）
+
+- DeepSeek + uni-robot-agent 完成吸起、搬运、释放。
+- 独立验证（不用 agent 自报）：绿块中心 **(247.6, 44.0) mm**，红叉 **(246.5, 47.7) mm**，误差 **约 3.9 mm**（place_radius 17.5 mm）→ 通过。
+- Agent 自己的 `verify_place` 报 `no block found`：放置后的绿块**盖住了红叉**，`find_line_intersection` 找不到交点；agent 移臂重验时 episode 420 s 超时（exit 130）。这是验证工具遮挡问题，不是放置失败。
+
+### 黄块 → 黑叉（已放置，独立复验待补）
+
+- Agent 完成吸起、搬运、释放；其日志记录黄块中心 **(248.9, −51.9) mm**，黑叉目标 **(246.4, −62.7) mm**，自报误差 **约 11 mm**（< 17.5 mm place radius）。
+- **未完成独立复验**：agent 最后把臂 park 到 `(0.3, 0, −0.005)` 时机器人进入持续报警/停止状态（`GET_ALARMS_STATE` 返回的第 2 个 32-bit 组为 `0x04`），`ClearAllAlarms`、清队列、`SET_HOME_CMD`、关节/笛卡尔移动均无效；臂停在 `x=258.6, y=−48.4, z=55.9`，挡住 front 相机。
+- 断电重启后报警清除，厂家 `SET_HOME_CMD` 26.4 s 回到回零位（j4=88°）。黄块落点的最终相机复验仍待补。
+- 结论：按 agent 自报 11 mm 在容差内，但在独立复验前**不宣称成功**。
+
+### 仓库状态
+
+- 最新提交 `4f2d670`（`feat: correct base j1 scale and recalibrate front camera`），已推送到
+  `origin/feature/rua-line-intersection`；远端 `git ls-remote` 已核对为同一 commit。
+- 全量测试：**191 passed, 3 warnings in 17.98 s**（`pytest -o addopts="" -q`，exit 0）。
+- `audit/touch/` 调试图片/日志已加入 `.gitignore`；`runs/` 原本忽略；未提交 `key.txt`/token。
+- 工作区仅剩一个未跟踪文件 `docs/IMPLEMENTATION.md`（本轮未创建，未处理）。
+
+### 待办 / 风险
+
+1. 断电重启并回零后，移开臂拍一帧，独立确认黄块相对黑叉的最终误差。
+2. `verify_place` 在物块盖住目标交点时会失败：建议改用**放置前**的交点快照、侧视相机，或在放置后从块周围拟合线。
+3. Agent 在最后复验阶段容易触发 episode 超时（420 s）；可增大 `--episode-timeout-s`，或把复验做成一次轻量快照。
+4. 若要 VALID 标定：换硬质底板（亚克力/厚卡纸）重贴，目标 RMS ≤2 mm / max ≤3 mm。
