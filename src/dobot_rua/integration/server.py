@@ -55,7 +55,14 @@ def prepare(args: argparse.Namespace) -> DobotAdapter:
 
         return mock_prepare(args)
 
-    robot = DobotRobot(port=args.robot_port)
+    robot_limits = (
+        yaml.safe_load(Path("configs/robot_limits.yaml").read_text(encoding="utf-8"))
+        or {}
+    )
+    robot = DobotRobot(
+        port=args.robot_port,
+        base_j1_scale=float(robot_limits.get("base_j1_scale", 1.0)),
+    )
     robot.connect()
     camera_source = RealCameraSource(load_camera_specs(args.camera_config))
     metadata = _task_metadata(args.task_config)

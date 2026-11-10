@@ -1,6 +1,8 @@
 # Task tolerances (metres). Pre-registered before formal DOE.
-# 2026-11-09 measured: table 60 mm below the base, block 25 mm, board thickness negligible.
-table_z_m: -0.060
+# 2026-11-09 eight touch points put the board/table top at z=-92..-94 mm in the
+# tip frame (tip = flange - 71 mm); use -93 mm. The earlier -60 mm value was a
+# riser measurement, not the robot z frame, and biased every projection.
+table_z_m: -0.093
 block_colors: [blue, yellow, green]
 block_size_m: 0.025
 block_height_m: 0.025

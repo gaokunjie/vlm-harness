@@ -115,3 +115,15 @@ def test_detect_blocks_accepts_a_rotated_filled_square():
     blocks = detect_blocks(image, K, T, plane_z_m=0.0, colors=("green",))
     assert blocks
     assert blocks[0].color == "green"
+
+
+def test_detect_blocks_accepts_a_45_degree_rotated_square():
+    """Axis-aligned bbox fill is 0.5 at 45 deg; the rotated-rect fill is ~1."""
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    rect = ((320.0, 240.0), (90.0, 90.0), 45.0)
+    points = cv2.boxPoints(rect).astype(np.int32)
+    cv2.fillPoly(image, [points], (0, 255, 0))
+    K, T = _camera()
+    blocks = detect_blocks(image, K, T, plane_z_m=0.0, colors=("green",))
+    assert len(blocks) == 1
+    assert np.allclose(blocks[0].center_uv, (320.0, 240.0), atol=2.0)

@@ -408,3 +408,28 @@ python -m dobot_rua.integration.server --run-id real-bringup \
 - 板面确定为 **60 mm**（基座下方），`configs/task.yaml` 保持 `table_z_m: -0.060`。
 - 触碰脚本现在打印**吸盘尖 z**（法兰 − 71.0），不再打印法兰 z，避免误读。
 - 上一次触碰（66.6）记录的法兰 z≈−21 mm，对应尖端≈−92 mm；板面 −60 mm，相差约 32 mm。重跑前请确认：吸盘唇口接触板面时，固件 `pose().z` 应约为 `−60 + 71 = +11 mm`；若不是，需要先查 TCP/板面高度。
+
+## 2026-11-10 底座 j1 尺度差异（关键修复）
+
+- 实测 `j1_physical = 1.26932 × j1_firmware`：尺子命令物理 y=60 mm，修复前实测约 80 mm；修复后约 60 mm。
+- 根因是底座物理转角与固件报告角不一致，导致固件 `x/y/j1` 与相机世界差一个随 j1 增大的角度误差；不是 front 手眼本身。
+- 已写入 `configs/robot_limits.yaml` 的 `base_j1_scale: 1.26932`；`DobotRobot` 的 `read_state/move_joints/move_pose` 做物理↔固件换算；server、home、planar 脚本均传入。测试：`tests/test_hardware_base_scale.py`。
+- 修复后 front 两平面重扫：20 个有效位姿、3D 刚体残差 3.34 mm、像素 9.19 px RMS / 20.09 px max；仍为 **PROVISIONAL**（纸板弯曲，未过 2 px/3 px 门限）。
+- `table_z_m` 从 −0.060 改为 **−0.093**（8 个触点的板面/桌面实测）。
+- 详细证据、测量方法与注意事项：`docs/J1_BASE_SCALE.md`。
+
+## 2026-11-10 触碰标定计划修正（7 列 × 8 行）
+
+- 标定板：**7 列 × 8 行**，25 mm 方格，marker 18.75 mm，`DICT_4X4_50`。
+- 机械臂不可达：**第 1 行和第 8 行**（1-indexed）；可达行为第 2–7 行，对应脚本 0-indexed `--reachable-rows 1-6`。
+- 列约束沿用之前实测：最左两列、最右一列不可达；可达列第 3–6 列，对应 `--reachable-columns 2-5`。
+- 运行命令：
+
+```bash
+env -u ALL_PROXY -u all_proxy .venv/bin/python scripts/calibrate_cameras_touch.py \
+  --cameras front --board-preset large --touch-count 8 --settle-s 2.0 \
+  --reachable-columns 2-5 --reachable-rows 1-6
+```
+
+- 板平放在白板上、板面朝 front 相机；机械臂先移出板的视野，再按提示依次触碰 8 个 marker 中心。
+- 触碰脚本已传入 `base_j1_scale`，记录的 tip x/y 为物理坐标；`table_z_m` 使用 `-0.093`。

@@ -24,11 +24,10 @@ import numpy as np
 import yaml
 
 from dobot_rua.calibration.charuco import (
-    board_pose,
-    cup_center_pixel,
-    detect_board,
+    cup_center_pixel_from_markers,
+    detect_markers,
     make_board,
-    object_points_for,
+    marker_reprojection_px,
 )
 from dobot_rua.calibration.front_planar import (
     CalibrationRejected,
@@ -57,7 +56,14 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--rows", type=int, default=3)
     p.add_argument("--samples-per-plane", type=int, default=None)
     p.add_argument("--holdout", type=int, default=2)
-    p.add_argument("--min-markers", type=int, default=6)
+    p.add_argument(
+        "--min-markers",
+        type=int,
+        default=3,
+        help="minimum decoded ArUco markers per sample (the arm tilts the board, "
+        "so normal spread alone is not a rigidity test)",
+    )
+    p.add_argument("--max-normal-spread-deg", type=float, default=30.0)
     p.add_argument("--timeout-s", type=float, default=25.0)
     p.add_argument("--no-save", action="store_true")
     p.add_argument("--dry-run", action="store_true")
@@ -120,14 +126,9 @@ def _board_reprojection_px(
     intrinsic_k: np.ndarray,
     distortion: np.ndarray,
 ) -> float:
-    rvec, _ = cv2.Rodrigues(transform[:3, :3])
-    object_points = object_points_for(board, ids).astype(np.float64)
-    image_points = np.asarray(corners, dtype=np.float64).reshape(-1, 2)
-    projected, _ = cv2.projectPoints(
-        object_points, rvec, transform[:3, 3], intrinsic_k, distortion
+    return marker_reprojection_px(
+        board, corners, ids, transform, intrinsic_k, distortion
     )
-    errors = np.linalg.norm(projected.reshape(-1, 2) - image_points, axis=1)
-    return float(np.mean(errors))
 
 
 def _max_normal_spread_deg(poses: list[np.ndarray]) -> float:
@@ -175,17 +176,17 @@ def _capture_stable_board(
         if mask_rect:
             x0, y0, x1, y1 = mask_rect
             image[y0:y1, x0:x1] = 255
-        corners, ids = detect_board(board, image)
+        corners, ids = detect_markers(board, image)
         if corners is None or ids is None:
             previous = None
             previous_cup = None
             stable = 0
             time.sleep(0.2)
             continue
-        cup = cup_center_pixel(
+        cup = cup_center_pixel_from_markers(
+            board,
             corners,
             ids,
-            board,
             intrinsic_k,
             distortion,
             cup_center_in_board_mm=cup_center_in_board_mm,
@@ -280,7 +281,10 @@ def main() -> int:
     j4_offset = float(robot_config.get("post_home_j4_offset_deg", 88.0))
 
     print("operator: verify TCP (tip = flange - tip_length_mm) before continuing")
-    robot = DobotRobot(port=args.port)
+    robot = DobotRobot(
+        port=args.port,
+        base_j1_scale=float(robot_config.get("base_j1_scale", 1.0)),
+    )
     robot.connect()
     samples: list[PlanarSample] = []
     board_poses: list[np.ndarray] = []
@@ -341,12 +345,12 @@ def main() -> int:
                 if args.mask_rect:
                     x0, y0, x1, y1 = args.mask_rect
                     image[y0:y1, x0:x1] = 255
-                corners, ids = detect_board(board, image)
+                corners, ids = detect_markers(board, image)
                 cup = (
-                    cup_center_pixel(
+                    cup_center_pixel_from_markers(
+                        board,
                         corners,
                         ids,
-                        board,
                         intrinsic,
                         distortion,
                         cup_center_in_board_mm=p_cup,
@@ -452,10 +456,10 @@ def main() -> int:
     except CalibrationRejected as error:
         print(f"calibration rejected: {error}")
         return 1
-    if normal_spread > 3.0:
+    if normal_spread > args.max_normal_spread_deg:
         print(
-            "calibration rejected: board normal moved >3 deg; use a rigid backing "
-            "and an anti-rotation fixture"
+            f"calibration rejected: board normal moved "
+            f"{normal_spread:.2f} deg > {args.max_normal_spread_deg:.2f} deg"
         )
         return 1
 

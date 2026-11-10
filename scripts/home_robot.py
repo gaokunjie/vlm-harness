@@ -32,7 +32,10 @@ def main() -> None:
     home_deg = tuple(float(value) for value in data["home_deg"])
     offset = float(data.get("post_home_j4_offset_deg", 88.0))
 
-    robot = DobotRobot(port=args.port)
+    robot = DobotRobot(
+        port=args.port,
+        base_j1_scale=float(data.get("base_j1_scale", 1.0)),
+    )
     robot.connect()
     try:
         state = robot.home(

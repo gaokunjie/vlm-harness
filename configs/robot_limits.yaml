@@ -27,3 +27,8 @@ home_timeout_s: 120       # 厂家回零会展开扫掠，最长可能 120s
 # 88° 留 2° 安全余量（j4 限位 ±90°）；吸盘轴对称，不影响末端位置。
 # 由 src/dobot_rua/hardware/dobot.py 的 DobotRobot.home() 强制执行。
 post_home_j4_offset_deg: 88.0
+
+# 底座 j1 的物理角 / 固件报告角。2026-11-09 实测：尺子测 y 位移 80 mm
+# 对应固件 60 mm；相机-板数据拟合 1.269。DobotRobot 在 read_state 里把
+# 固件 x/y 转成物理坐标，在 move_joints/move_pose 里把物理目标换算回固件坐标。
+base_j1_scale: 1.26932

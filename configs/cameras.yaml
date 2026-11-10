@@ -75,67 +75,67 @@ cameras:
     image_size:
     - 720
     - 1280
-    calibration_date: '2026-11-09'
+    calibration_date: '2026-11-10'
     calibration_status: PROVISIONAL
     planar:
       T_world_from_optical:
-      - - -0.9930445272120834
-        - -0.11659754764001246
-        - -0.016357837829767293
-        - 0.19315198087641833
-      - - -0.11657252014885726
-        - 0.9931790898561149
-        - -0.002478511392594026
-        - 0.005215925269232841
-      - - 0.016535250837956504
-        - -0.000554397794046013
-        - -0.9998631296946655
-        - 0.23800138025782372
+      - - -0.9992729958127848
+        - 0.009602883365838318
+        - 0.03689531773009806
+        - 0.17776115313388885
+      - - 0.010511658349121036
+        - 0.9996441558093262
+        - 0.02451666361907765
+        - -0.004726510121065508
+      - - -0.03664675808436725
+        - 0.024886670876631063
+        - -0.9990183525514351
+        - 0.23778142437074945
       - - 0.0
         - 0.0
         - 0.0
         - 1.0
       H_table:
-      - - -0.0002958190692500808
-        - -3.4508844120448096e-05
-        - 0.3876817761275839
-      - - -3.4440425170536055e-05
-        - 0.0002948582671491528
-        - -0.08319816763312783
-      - - -1.6352642240601692e-05
-        - 5.523123014725605e-07
+      - - -0.00032864190301984115
+        - -1.2745116975823064e-06
+        - 0.40257526385980674
+      - - 3.350909003156211e-06
+        - 0.00033796318152877773
+        - -0.12429072075204346
+      - - 3.7168742469758107e-05
+        - -2.542700366489469e-05
         - 1.0
       H_top:
-      - - -0.00027126712558495894
-        - -3.160487062999049e-05
-        - 0.3713622380198357
-      - - -3.1558296656489296e-05
-        - 0.00027012219159185493
-        - -0.07578091231489181
-      - - -1.6352642240601692e-05
-        - 5.523123014725605e-07
+      - - -0.00030330424521608513
+        - -1.5197961630569634e-06
+        - 0.3855841260447386
+      - - 3.084374429204887e-06
+        - 0.00031242947742331803
+        - -0.1152542240035919
+      - - 3.7168742469758107e-05
+        - -2.5427003664894684e-05
         - 1.0
       p_cup_board_mm:
       - 0.0
       - 0.0
       - 0.0
-      table_z_m: -0.06
-      block_top_z_m: -0.034999999999999996
+      table_z_m: -0.093
+      block_top_z_m: -0.068
       block_height_m: 0.025
       board_thickness_m: 0.002
       calibrated_region:
-      - - 0.28061240598390874
-        - 0.11912377205648064
-      - - 0.30692362915782884
-        - -0.08048771153712184
-      - - 0.07879449977694132
-        - -0.1105545967851555
-      - - 0.05248327660302124
-        - 0.08905688680844699
+      - - 0.29683953985979417
+        - 0.1000917462851188
+      - - 0.2970113191029948
+        - -0.10124657680619908
+      - - 0.06692019655483694
+        - -0.1014316884963746
+      - - 0.06674841731163636
+        - 0.0999066345949433
       calibration_status: PROVISIONAL
       calibration_mode: touch_board
-      touch_rms_mm: 10.90511972269751
-      touch_max_mm: 21.22712880296415
+      touch_rms_mm: 3.8845080017509668
+      touch_max_mm: 6.016804079250701
       provisional: true
       camera_controls:
         focus_automatic_continuous: 0
@@ -147,10 +147,10 @@ cameras:
       fit_rmse_px: 0.0
       holdout_max_px: 0.0
       samples: 8
-      measured_at: '2026-11-09'
+      measured_at: '2026-11-10'
     cup_center_in_board_mm:
-    - 25.0
     - 75.0
+    - 25.0
     - 0.0
     focus_automatic_continuous: 0
     focus_absolute: 0
@@ -158,9 +158,11 @@ cameras:
     exposure: 280
     white_balance_automatic: 0
     white_balance_temperature: 4600
-    calibration_note: DO NOT USE. The tip length was updated to 71.0 mm on 2026-11-09;
-      the previous touch planar was fitted with 66.6 mm and is stale. Re-run scripts/calibrate_cameras_touch.py
-      with the 7x8 board and reachable rows/columns.
+    calibration_note: 2026-11-09 two-plane marker PnP on the 5x5 board taped to the
+      suction cup, after correcting the measured base j1 scale (1.26932). Cup center
+      in board coordinates is (75,25,0) mm (user x/y axes swapped vs OpenCV board
+      frame). PROVISIONAL because the marker PnP residual is 9.2 px (board is thin
+      paper); use for demo only.
     tip_length_mm: 71.0
     tip_length_measured_at: '2026-11-09'
     tip_length_note: Vertical distance from the flange reference plane (the end mounting
@@ -184,7 +186,7 @@ cameras:
       - 0.0
       - 1.0
     calibration_mode: touch_board
-    touch_residual_mm: 10.905
+    touch_residual_mm: 3.885
     touch_points: 8
     board_reprojection_px: 0.894
     camera_height_mm: 331.81
@@ -215,20 +217,20 @@ cameras:
     - -0.41
     - 0.0
     poses: 13
-    calibration_hash: 0886b3b8824e6c936548e4446ddd19d1e2bbb099d2ad03da0763ae6100d12137
+    calibration_hash: 225774171c95d698d605764c89326d077e877b5342a300aeeeeac4934ee29100
     T_world_from_optical:
-    - - -0.9930445272120834
-      - -0.11659754764001246
-      - -0.016357837829767293
-      - 0.19315198087641833
-    - - -0.11657252014885726
-      - 0.9931790898561149
-      - -0.002478511392594026
-      - 0.005215925269232841
-    - - 0.016535250837956504
-      - -0.000554397794046013
-      - -0.9998631296946655
-      - 0.23800138025782372
+    - - -0.9992729958127848
+      - 0.009602883365838318
+      - 0.03689531773009806
+      - 0.17776115313388885
+    - - 0.010511658349121036
+      - 0.9996441558093262
+      - 0.02451666361907765
+      - -0.004726510121065508
+    - - -0.03664675808436725
+      - 0.024886670876631063
+      - -0.9990183525514351
+      - 0.23778142437074945
     - - 0.0
       - 0.0
       - 0.0

@@ -117,3 +117,15 @@ def test_detect_line_intersection_masks_outside_region():
     )
     assert result is not None
     assert np.allclose(result.intersection_uv, (320.0, 240.0), atol=5.0)
+
+
+def test_black_detection_ignores_a_large_black_object():
+    image = np.full((480, 640, 3), 255, dtype=np.uint8)
+    cv2.line(image, (100, 200), (300, 200), (0, 0, 0), 3)
+    cv2.line(image, (200, 100), (200, 300), (0, 0, 0), 3)
+    # The robot arm is a large solid black blob; its edges must not win.
+    cv2.rectangle(image, (350, 150), (550, 350), (0, 0, 0), -1)
+    K, T = _camera()
+    result = detect_line_intersection(image, K, T, plane_z_m=0.0, line_color="black")
+    assert result is not None
+    assert np.allclose(result.intersection_uv, (200.0, 200.0), atol=6.0)

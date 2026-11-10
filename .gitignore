@@ -13,6 +13,7 @@ vendor/uni-robot-agent/
 *.egg-info/
 
 audit/cameras/
+audit/touch/
 
 audit/front_planar_last.json
 configs/*.bak

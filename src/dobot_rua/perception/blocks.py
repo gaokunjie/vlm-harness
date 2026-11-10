@@ -65,10 +65,16 @@ def detect_blocks(
             x, y, width, height = cv2.boundingRect(contour)
             if width <= 0 or height <= 0:
                 continue
-            aspect = width / height
-            if not 0.6 <= aspect <= 1.6:
+            # A square rotated 45 deg has an axis-aligned bbox fill of only
+            # ~0.5, so use the minimum-area rectangle: it stays tight around
+            # the block at any rotation and still rejects long thin lines.
+            (_, _), (rect_w, rect_h), _ = cv2.minAreaRect(contour)
+            if rect_w <= 0.0 or rect_h <= 0.0:
                 continue
-            fill = area / float(width * height)
+            rect_aspect = min(rect_w, rect_h) / max(rect_w, rect_h)
+            if rect_aspect < 0.6:
+                continue
+            fill = area / float(rect_w * rect_h)
             if fill < 0.6:
                 continue
             moments = cv2.moments(contour)

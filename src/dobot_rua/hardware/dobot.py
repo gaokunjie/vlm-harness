@@ -10,10 +10,47 @@ from typing import Any
 from .interface import RobotState
 
 
+def physical_from_firmware(
+    x_mm: float, y_mm: float, base_j1_scale: float
+) -> tuple[float, float, float]:
+    """Map a firmware Cartesian reading to the physical base frame.
+
+    The base stepper on this cell turns ``base_j1_scale`` times the angle the
+    firmware reports.  The radius is unaffected, so only the polar angle needs
+    correcting.
+    """
+    if base_j1_scale <= 0.0:
+        raise ValueError("base_j1_scale must be positive")
+    radius = math.hypot(float(x_mm), float(y_mm))
+    angle_firmware = math.atan2(float(y_mm), float(x_mm))
+    j1_physical = math.degrees(angle_firmware) * float(base_j1_scale)
+    angle = math.radians(j1_physical)
+    return radius * math.cos(angle), radius * math.sin(angle), j1_physical
+
+
+def firmware_from_physical(
+    x_mm: float, y_mm: float, base_j1_scale: float
+) -> tuple[float, float]:
+    """Map a physical base-frame XY target to the firmware's Cartesian frame."""
+    if base_j1_scale <= 0.0:
+        raise ValueError("base_j1_scale must be positive")
+    radius = math.hypot(float(x_mm), float(y_mm))
+    angle = math.atan2(float(y_mm), float(x_mm)) / float(base_j1_scale)
+    return radius * math.cos(angle), radius * math.sin(angle)
+
+
 class DobotRobot:
-    def __init__(self, port: str = "/dev/dobot_follower", driver: Any | None = None) -> None:
+    def __init__(
+        self,
+        port: str = "/dev/dobot_follower",
+        driver: Any | None = None,
+        base_j1_scale: float = 1.0,
+    ) -> None:
+        if base_j1_scale <= 0.0:
+            raise ValueError("base_j1_scale must be positive")
         self.port = port
         self._driver = driver
+        self._base_j1_scale = float(base_j1_scale)
         self._suction_on = False
 
     def connect(self) -> None:
@@ -121,12 +158,15 @@ class DobotRobot:
         if self._driver is None:
             raise RuntimeError("robot is not connected")
         x, y, z, r, j1, j2, j3, j4 = self._driver.pose()
+        x_phys, y_phys, j1_phys = physical_from_firmware(
+            float(x), float(y), self._base_j1_scale
+        )
         return RobotState(
-            x_mm=float(x),
-            y_mm=float(y),
+            x_mm=x_phys,
+            y_mm=y_phys,
             z_mm=float(z),
             r_deg=float(r),
-            j1_deg=float(j1),
+            j1_deg=j1_phys,
             j2_deg=float(j2),
             j3_deg=float(j3),
             j4_deg=float(j4),
@@ -144,16 +184,20 @@ class DobotRobot:
         if self._driver is None:
             raise RuntimeError("robot is not connected")
         target = (float(x_mm), float(y_mm), float(z_mm), float(r_deg))
+        x_fw, y_fw = firmware_from_physical(
+            target[0], target[1], self._base_j1_scale
+        )
+        firmware_target = (x_fw, y_fw, target[2], target[3])
         if not (
             hasattr(self._driver, "_set_ptp_cmd")
             and hasattr(self._driver, "_get_queued_cmd_current_index")
         ):
-            self._driver.move_to(*target, wait=True)
+            self._driver.move_to(*firmware_target, wait=True)
             return
         from pydobot.enums import PTPMode
 
         response = self._driver._set_ptp_cmd(
-            *target, mode=PTPMode.MOVL_XYZ, wait=False
+            *firmware_target, mode=PTPMode.MOVL_XYZ, wait=False
         )
         queued_index = None
         if response is not None and len(response.params) >= 4:
@@ -201,10 +245,13 @@ class DobotRobot:
             raise NotImplementedError("driver does not expose joint commands")
         self._driver.speed(20.0, 20.0)
         target = (float(j1_deg), float(j2_deg), float(j3_deg), float(j4_deg))
+        # The firmware's j1 scale is not the physical one: send the smaller
+        # firmware angle so the physical base rotation matches the target.
+        firmware_j1 = target[0] / self._base_j1_scale
         # wait=False avoids pydobot crashing when a serial response is lost;
         # the settle poll below is the real completion check.
         self._driver._set_ptp_cmd(
-            target[0],
+            firmware_j1,
             target[1],
             target[2],
             target[3],

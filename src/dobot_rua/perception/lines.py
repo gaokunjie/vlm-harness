@@ -19,13 +19,35 @@ class LineIntersection:
     confidence: float
 
 
+def _drop_large_components(mask: np.ndarray, max_area: int = 12000) -> np.ndarray:
+    """Keep thin strokes; drop large solid blobs such as the robot arm.
+
+    The drawn black lines are a few pixels wide (area well under 5000 px),
+    while the robot's black end effector is a solid region with a much larger
+    connected area.  Without this filter the arm's edges win the Hough vote.
+    """
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    filtered = np.zeros_like(mask)
+    for label in range(1, count):
+        if stats[label, cv2.CC_STAT_AREA] <= max_area:
+            filtered[labels == label] = 255
+    return filtered
+
+
 def _line_mask(image_bgr: np.ndarray, line_color: str) -> np.ndarray | None:
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
     if line_color == "black":
-        # Black paint is dark AND unsaturated. Real marker/print lines can sit
-        # around V=110 and S=70 under this camera's white balance, so keep a
-        # moderately wide dark/desaturated band rather than a gray threshold.
-        return cv2.inRange(hsv, np.array((0, 0, 0)), np.array((180, 120, 120)))
+        # The ink is dark but can be slightly green/blue under this camera's
+        # white balance (V~8-70, S up to 255), while a bright red line has
+        # V~255.  Keep dark pixels that are either desaturated or very dark,
+        # then drop large solid blobs (robot arm / board frame).
+        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        saturation = hsv[:, :, 1]
+        value = hsv[:, :, 2]
+        mask = (
+            (gray < 110) & ((saturation < 100) | (value < 90))
+        ).astype(np.uint8) * 255
+        return _drop_large_components(mask)
     if line_color == "red":
         # Real red marker appears desaturated/brownish; allow S>=40.
         low = cv2.inRange(hsv, np.array((0, 40, 40)), np.array((20, 255, 255)))

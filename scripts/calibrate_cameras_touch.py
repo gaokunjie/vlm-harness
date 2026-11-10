@@ -50,6 +50,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--camera-config", type=Path, default=Path("configs/cameras.yaml"))
     p.add_argument("--output", type=Path, default=Path("configs/cameras.yaml"))
     p.add_argument("--robot-port", default="/dev/dobot_follower")
+    p.add_argument(
+        "--robot-config", type=Path, default=Path("configs/robot_limits.yaml")
+    )
     p.add_argument("--task-config", type=Path, default=Path("configs/task.yaml"))
     p.add_argument("--board-preset", choices=("large", "wrist"), default="large")
     p.add_argument("--dictionary", default=None)
@@ -267,7 +270,13 @@ def main() -> int:
     tip_length_mm = load_tip_length_mm(args.camera_config)
     if tip_length_mm <= 0.0:
         raise SystemExit("front tip_length_mm is missing; measure TCP first")
-    robot = DobotRobot(port=args.robot_port)
+    robot_config = (
+        yaml.safe_load(args.robot_config.read_text(encoding="utf-8")) or {}
+    )
+    robot = DobotRobot(
+        port=args.robot_port,
+        base_j1_scale=float(robot_config.get("base_j1_scale", 1.0)),
+    )
     robot.connect()
     base_points = []
     try:
